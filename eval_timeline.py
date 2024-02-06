@@ -17,6 +17,32 @@ logger.setLevel(logging.WARNING)
 """
 
 
+parser = argparse.ArgumentParser(
+    description="Evaluate predicted output against gold annotations"
+)
+
+parser.add_argument("--gold_path", required=True, help="A gold annotation json file")
+parser.add_argument("--pred_path", required=True, help="A predicted output json file")
+parser.add_argument(
+    "--all_id_path",
+    required=True,
+    help="Path to file with list of ids, delimited by new line characters",
+)
+parser.add_argument(
+    "--gold_id_path",
+    required=False,
+    help="(Only for test evaluation) Path to file with list of gold annotated ids, delimited by new line characters",
+)
+
+parser.add_argument("--strict", action="store_true", help="do strict eval")
+parser.add_argument(
+    "--relaxed_to",
+    help="Type 'year' to only evaluate year, 'month' to evaluate year and month, "
+    "or 'day' to evaluate year-month-day",
+    choices=["day", "month", "year"],
+)
+
+
 class Chemo:
     def __init__(self, text, first_start=None, last_end=None, cui=None):
         self.text = text
@@ -30,7 +56,7 @@ class Chemo:
         )
 
 
-def read_all_patients(data_path):
+def read_all_patients(data_path : str):
     # Note that all key/value pairs of JSON are always of the type str.
     # https://docs.python.org/3/library/json.html
     with open(data_path, "r") as fr:
@@ -81,9 +107,9 @@ def relaxed_rel_eval(incorrect, missing, preds, golds):
 
 def relaxed_within_range_eval(incorrect, missing, gold_chemos, pred_chemos):
     """
-        incorrect: false positive,
-        missing: false negative,
-        gold_chemos and pred_chemos, basically use Chemo object to get the start and end dates for each chemo
+    incorrect: false positive,
+    missing: false negative,
+    gold_chemos and pred_chemos, basically use Chemo object to get the start and end dates for each chemo
     """
     not_truly_incorrect = []
     not_truly_missing = []
@@ -221,12 +247,12 @@ def normalize_to_month_and_year(golds):
 
 def summarize_timeline(timelines):
     """
-        This is to postprocess timelines one more time after we normalized original timeline
-        to year only or month only timelines. What it does is: if we have a generic chemo mention,
-        e.g. <chemotherapy, contains-1, 2011-01>, or <chemoradiation, contains-1, 2011-01>, we want to see
-        if we can have more specific chemo mention happened on the same date with the same label,
-        e.g. <Taxol, contains-1, 2011-01>. If we find a more specific chemo mention,
-        we would ignore the generic chemo mention, only add <Taxol, contains-1, 2011-01> to the timeline.
+    This is to postprocess timelines one more time after we normalized original timeline
+    to year only or month only timelines. What it does is: if we have a generic chemo mention,
+    e.g. <chemotherapy, contains-1, 2011-01>, or <chemoradiation, contains-1, 2011-01>, we want to see
+    if we can have more specific chemo mention happened on the same date with the same label,
+    e.g. <Taxol, contains-1, 2011-01>. If we find a more specific chemo mention,
+    we would ignore the generic chemo mention, only add <Taxol, contains-1, 2011-01> to the timeline.
     """
     date_rel_to_chemo = defaultdict(lambda: defaultdict(list))
     for tup in timelines:
@@ -262,11 +288,11 @@ def strict_eval(gold, pred):
 
 def fp_fn_single_count(false_pos, false_neg):
     """
-        What it does here is: let's say in pred we have <Taxol, BEGINS-ON, 2011-01-01>,
-        in gold we have <Taxol, CONTAINS-1, 2011-01-01>, then <Taxol, BEGINS-ON, 2011-01-01> would be false positive,
-        <Taxol, CONTAINS-1, 2011-01-01> would be false negative, that means, the same mistake is counted twice,
-        once in fp, once in fn. So, here, we want to make sure, we count <Taxol, CONTAINS-1, 2011-01-01> as false negative,
-        and don't count <Taxol, BEGINS-ON, 2011-01-01> as false positive.
+    What it does here is: let's say in pred we have <Taxol, BEGINS-ON, 2011-01-01>,
+    in gold we have <Taxol, CONTAINS-1, 2011-01-01>, then <Taxol, BEGINS-ON, 2011-01-01> would be false positive,
+    <Taxol, CONTAINS-1, 2011-01-01> would be false negative, that means, the same mistake is counted twice,
+    once in fp, once in fn. So, here, we want to make sure, we count <Taxol, CONTAINS-1, 2011-01-01> as false negative,
+    and don't count <Taxol, BEGINS-ON, 2011-01-01> as false positive.
     """
     not_truly_fp = []
     # false_neg_tracker: (chemo, timex) to label
@@ -425,9 +451,7 @@ def read_files(args):
 
     # Sanity check
     if len(all_ids) == 0 or len(all_ids) != len(pred_all_patient):
-        raise ValueError(
-            "Malformated or some patients are missing in prediction file."
-        )
+        raise ValueError("Malformated or some patients are missing in prediction file.")
     if not args.gold_id_path:
         if len(all_ids) != len(gold_all_patient):
             raise ValueError(
@@ -447,7 +471,9 @@ def read_files(args):
             or len(gold_ids) != len(gold_all_patient)
             or len(gold_ids) > len(pred_all_patient)
         ):
-            raise ValueError("Error in gold annotated ids file. Check the content of file in gold_id_path")
+            raise ValueError(
+                "Error in gold annotated ids file. Check the content of file in gold_id_path"
+            )
     else:
         gold_ids = list(gold_all_patient.keys())
 
@@ -455,25 +481,29 @@ def read_files(args):
 
 
 def micro_average_metrics(
-        all_true_pos:dict, 
-        all_false_pos:dict, 
-        all_false_neg:dict
-        ) -> float:
+    all_true_pos: dict, all_false_pos: dict, all_false_neg: dict
+) -> float:
     # Micro average metrics
     logger.info(
         f"tp, fp, fn over all patients: {sum(all_true_pos.values())}, {sum(all_false_pos.values())}, {sum(all_false_neg.values())}"
     )
-    
+
     if len(all_true_pos) + len(all_false_pos) != 0:
-        micro_precision = sum(all_true_pos.values()) / (sum(all_true_pos.values()) + sum(all_false_pos.values()))
+        micro_precision = sum(all_true_pos.values()) / (
+            sum(all_true_pos.values()) + sum(all_false_pos.values())
+        )
     else:
         micro_precision = 0
     if len(all_true_pos) + len(all_false_neg) != 0:
-        micro_recall = sum(all_true_pos.values()) / (sum(all_true_pos.values()) + sum(all_false_neg.values()))
+        micro_recall = sum(all_true_pos.values()) / (
+            sum(all_true_pos.values()) + sum(all_false_neg.values())
+        )
     else:
         micro_recall = 0
     if micro_precision + micro_recall:
-        micro_f1 = 2 * (micro_precision * micro_recall) / (micro_precision + micro_recall)
+        micro_f1 = (
+            2 * (micro_precision * micro_recall) / (micro_precision + micro_recall)
+        )
     else:
         micro_f1 = 0
 
@@ -487,18 +517,19 @@ def micro_average_metrics(
 
 
 def macro_average_metrics(
-        local_precision:dict, 
-        local_recall:dict, 
-        local_f1:dict,
-        ) -> tuple:
+    local_precision: dict,
+    local_recall: dict,
+    local_f1: dict,
+) -> tuple:
     # Macro average metrics
     print("Macro average metrics")
 
     print("Type A evaluation: including the notes with no true relations")
     total_patients = len(local_f1)
-    assert len(local_precision) == len(local_recall) == len(local_f1) == total_patients, \
-        "total_patients should be equal to the number of local metrics"
-    
+    assert (
+        len(local_precision) == len(local_recall) == len(local_f1) == total_patients
+    ), "total_patients should be equal to the number of local metrics"
+
     type_a_macro_prec = sum(local_precision.values()) / total_patients
     type_a_macro_rec = sum(local_recall.values()) / total_patients
     type_a_macro_f1 = sum(local_f1.values()) / total_patients
@@ -509,7 +540,9 @@ def macro_average_metrics(
 
     print("Type B evaluation: excluding the notes with no true relations")
     type_b_prec = [
-        score for pat_id, score in local_precision.items() if local_relations[pat_id] != 0
+        score
+        for pat_id, score in local_precision.items()
+        if local_relations[pat_id] != 0
     ]
     type_b_rec = [
         score for pat_id, score in local_recall.items() if local_relations[pat_id] != 0
@@ -517,9 +550,10 @@ def macro_average_metrics(
     type_b_f1 = [
         score for pat_id, score in local_f1.items() if local_relations[pat_id] != 0
     ]
-    assert len(type_b_prec) == len(type_b_rec) == len(type_b_f1), \
-        "The number of local metrics should be the same."
-    
+    assert (
+        len(type_b_prec) == len(type_b_rec) == len(type_b_f1)
+    ), "The number of local metrics should be the same."
+
     type_b_macro_prec = sum(type_b_prec) / len(type_b_prec)
     type_b_macro_rec = sum(type_b_rec) / len(type_b_rec)
     type_b_macro_f1 = sum(type_b_f1) / len(type_b_f1)
@@ -532,34 +566,6 @@ def macro_average_metrics(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Evaluate predicted output against gold annotations"
-    )
-
-    parser.add_argument(
-        "--gold_path", required=True, help="A gold annotation json file"
-    )
-    parser.add_argument(
-        "--pred_path", required=True, help="A predicted output json file"
-    )
-    parser.add_argument(
-        "--all_id_path",
-        required=True,
-        help="Path to file with list of ids, delimited by new line characters",
-    )
-    parser.add_argument(
-        "--gold_id_path",
-        required=False,
-        help="(Only for test evaluation) Path to file with list of gold annotated ids, delimited by new line characters",
-    )
-
-    parser.add_argument("--strict", action="store_true", help="do strict eval")
-    parser.add_argument(
-        "--relaxed_to",
-        help="Type 'year' to only evaluate year, 'month' to evaluate year and month, "
-        "or 'day' to evaluate year-month-day",
-        choices=["day", "month", "year"],
-    )
     args = parser.parse_args()
 
     logger.info(args)
@@ -567,12 +573,18 @@ if __name__ == "__main__":
     print(f"Evaluation code for ChemoTimelines Shared Task. Version: {VERSION}")
     print(f"Reading from files...")
     pred_all_patient, gold_all_patient, all_ids, gold_ids = read_files(args=args)
-    print(f"predicted output: {len(pred_all_patient)}, gold annotation: {len(gold_all_patient)}, all ids: {len(all_ids)}")
+    print(
+        f"predicted output: {len(pred_all_patient)}, gold annotation: {len(gold_all_patient)}, all ids: {len(all_ids)}"
+    )
     print()
 
     all_true_pos, all_false_pos, all_false_neg = {}, {}, {}
-    local_relations = {} # Key = patient ID, Value = number of timeline in the patient
-    local_f1, local_precision, local_recall = {}, {}, {} # Key = patient ID, Value = score for the patient
+    local_relations = {}  # Key = patient ID, Value = number of timeline in the patient
+    local_f1, local_precision, local_recall = (
+        {},
+        {},
+        {},
+    )  # Key = patient ID, Value = score for the patient
 
     for pred_patient, pred_timeline in pred_all_patient.items():
         # pred_patient: patient ID; pred_timeline: a list of <chemo, label, timex>
@@ -611,24 +623,27 @@ if __name__ == "__main__":
         local_recall[pred_patient] = r
         local_f1[pred_patient] = f_score
 
-
     _ = micro_average_metrics(
-        all_true_pos=all_true_pos, 
-        all_false_pos=all_false_pos, 
-        all_false_neg=all_false_neg
+        all_true_pos=all_true_pos,
+        all_false_pos=all_false_pos,
+        all_false_neg=all_false_neg,
     )
 
     type_a_macro_f1, type_b_macro_f1 = macro_average_metrics(
-        local_precision=local_precision, 
-        local_recall=local_recall, 
+        local_precision=local_precision,
+        local_recall=local_recall,
         local_f1=local_f1,
     )
 
-    print("Official Score: Arithmetic mean of two types of Macro F1, type A and B, " + \
-          "in 'relaxed to month' setting will be used for the leaderboard. ")
+    print(
+        "Official Score: Arithmetic mean of two types of Macro F1, type A and B, "
+        + "in 'relaxed to month' setting will be used for the leaderboard. "
+    )
     if not (args.strict) and args.relaxed_to == "month":
         print("Official Score: ", (type_a_macro_f1 + type_b_macro_f1) / 2)
     else:
-        print("To see the official score, please run without --strict flag, and set 'relaxed to month' setting by --relaxed_to=month ")
+        print(
+            "To see the official score, please run without --strict flag, and set 'relaxed to month' setting by --relaxed_to=month "
+        )
 
     print("Evaluation completed!")
