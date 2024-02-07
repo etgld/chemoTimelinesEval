@@ -497,47 +497,11 @@ def micro_average_metrics(
     all_true_pos: dict,
     all_false_pos: dict,
     all_false_neg: dict,
-    patient_level_metrics: bool = False,
 ) -> float:
     # Micro average metrics
     logger.info(
         f"tp, fp, fn over all patients: {sum(all_true_pos.values())}, {sum(all_false_pos.values())}, {sum(all_false_neg.values())}"
     )
-    if patient_level_metrics:
-        with open("patient_level_metrics.txt", mode="wt") as f:
-            full_pt_list = chain.from_iterable(
-                (all_true_pos.keys(), all_false_pos.keys(), all_false_neg.keys())
-            )
-            for pt_id in full_pt_list:
-                pt_true_pos = all_true_pos.get(pt_id, [])
-                pt_false_pos = all_false_pos.get(pt_id, [])
-                pt_false_neg = all_false_neg.get(pt_id, [])
-
-                if len(pt_true_pos) + len(pt_false_pos) != 0:
-                    micro_precision = sum(pt_true_pos.values()) / (
-                        sum(pt_true_pos.values()) + sum(pt_false_pos.values())
-                    )
-                else:
-                    micro_precision = 0
-                if len(pt_true_pos) + len(pt_false_neg) != 0:
-                    micro_recall = sum(pt_true_pos.values()) / (
-                        sum(pt_true_pos.values()) + sum(pt_false_neg.values())
-                    )
-                else:
-                    micro_recall = 0
-                if micro_precision + micro_recall:
-                    micro_f1 = (
-                        2
-                        * (micro_precision * micro_recall)
-                        / (micro_precision + micro_recall)
-                    )
-                else:
-                    micro_f1 = 0
-                f.write(f"{pt_id} micro average metrics\n")
-                f.write(f"Micro precision: {micro_precision}\n")
-                f.write(f"Micro recall: {micro_recall}\n")
-                f.write(f"Micro f1: {micro_f1}\n")
-                f.write()
     if len(all_true_pos) + len(all_false_pos) != 0:
         micro_precision = sum(all_true_pos.values()) / (
             sum(all_true_pos.values()) + sum(all_false_pos.values())
@@ -636,7 +600,9 @@ if __name__ == "__main__":
         {},
     )  # Key = patient ID, Value = score for the patient
 
-    false_pos_debug, false_neg_debug = {}, {}
+    fn_fp_debug = defaultdict(
+        lambda: defaultdict(list)
+    )  # patient_id -> <FP | FN> -> List[<chemo, timex, rel>]
 
     for pred_patient, pred_timeline in pred_all_patient.items():
         # pred_patient: patient ID; pred_timeline: a list of <chemo, label, timex>
@@ -671,15 +637,8 @@ if __name__ == "__main__":
         all_false_pos[pred_patient] = len(false_pos)
         all_false_neg[pred_patient] = len(false_neg)
         if args.debug:
-            if pred_patient not in false_pos_debug.keys():
-                false_pos_debug[pred_patient] = false_pos
-            else:
-                false_pos_debug[pred_patient].append(false_pos)
-
-            if pred_patient not in false_neg_debug.keys():
-                false_neg_debug[pred_patient] = false_neg
-            else:
-                false_neg_debug[pred_patient].append(false_neg)
+            fn_fp_debug[patient_id]["false_positive"].extend(false_pos)
+            fn_fp_debug[patient_id]["false_negative"].extend(false_neg)
         local_precision[pred_patient] = p
         local_recall[pred_patient] = r
         local_f1[pred_patient] = f_score
@@ -688,9 +647,21 @@ if __name__ == "__main__":
         all_true_pos=all_true_pos,
         all_false_pos=all_false_pos,
         all_false_neg=all_false_neg,
-        patient_level_metrics=args.patient_level_metrics,
     )
 
+    if args.patient_level_metrics:
+        with open("patient_level_metrics.txt", mode="wt") as patient_metrics_file:
+            for patient_id, precision in local_precision.items():
+                recall = local_recall[patient_id]
+                f1 = local_f1[patient_id]
+                patient_metrics_file.write(f"{patient_id} micro average metrics\n\n")
+                patient_metrics_file.write(f"Micro precision: {micro_precision}\n")
+                patient_metrics_file.write(f"Micro recall: {micro_recall}\n")
+                patient_metrics_file.write(f"Micro f1: {micro_f1}\n")
+                patient_metrics_file.write()
+    if args.debug:
+        with open("patient_level_debug.json", mode="wt") as patient_debug_file:
+            json.dump(fn_fp_debug, patient_debug_file, indent=4)
     type_a_macro_f1, type_b_macro_f1 = macro_average_metrics(
         local_precision=local_precision,
         local_recall=local_recall,
