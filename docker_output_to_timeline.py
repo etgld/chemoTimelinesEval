@@ -12,7 +12,7 @@ from collections import defaultdict
 parser = argparse.ArgumentParser(description="")
 
 parser.add_argument("--docker_tsv_output_path", type=str)
-
+parser.add_argument("--impute_relative", action="store_true")
 parser.add_argument("--cancer_type", choices=["ovarian", "breast", "melanoma"])
 parser.add_argument("--output_dir", type=str)
 
@@ -121,14 +121,16 @@ def write_to_output(data, outfile_name):
 def keep_normalized_timex(pandas_col) -> bool:
     normalized_timex = pandas_col.normed_timex
     return normalized_timex.split("-")[0].isnumeric()
-
+def impute_relative_timexes(dataframe: pd.DataFame) -> pd.DataFrame:
+    dataframe.loc[dataframe["normed_timex"]=="PRESENT_REF"] = dataframe["DCT"]
+    return dataframe
 
 # not implementing prune by modality and
 # prune by polarity since that's currently happening
 # upstream to save processing time.
 # you can turn that off in
 # timeline_delegator.py in the Docker
-def convert_docker_output(docker_tsv_output_path: str) -> Tuple[List[str], Set[str]]:
+def convert_docker_output(docker_tsv_output_path: str, impute_relative: bool) -> Tuple[List[str], Set[str]]:
     docker_output_dataframe = pd.read_csv(docker_tsv_output_path, sep="\t")
 
     no_none_tlinks = docker_output_dataframe[
@@ -138,6 +140,9 @@ def convert_docker_output(docker_tsv_output_path: str) -> Tuple[List[str], Set[s
     normed_timexes_with_tlinks = no_none_tlinks[
         ~no_none_tlinks["normed_timex"].isin(["none"])
     ]
+
+    if impute_relative:
+        normed_timexes_with_tlinks = impute_relative_timexes(normed_timexes_with_tlinks)
 
     acceptable_normed_timexes_with_tlinks = normed_timexes_with_tlinks[
         normed_timexes_with_tlinks.apply(keep_normalized_timex, axis=1)
@@ -163,7 +168,9 @@ def convert_docker_output(docker_tsv_output_path: str) -> Tuple[List[str], Set[s
 def main():
     args = parser.parse_args()
 
-    timelines_tups, no_discovery_pt_ids = convert_docker_output(args.docker_tsv_output_path)
+    timelines_tups, no_discovery_pt_ids = convert_docker_output(
+        args.docker_tsv_output_path
+    )
 
     timelines_deduplicated = deduplicate(timelines_tups)
     resolved_timelines = conflict_resolution(timelines_deduplicated)
