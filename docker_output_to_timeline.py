@@ -11,7 +11,7 @@ from collections import defaultdict
 
 parser = argparse.ArgumentParser(description="")
 
-parser.add_argument("--docker_tsv_output_path", type=str)
+parser.add_argument("--input_tsv", type=str)
 parser.add_argument("--impute_relative", action="store_true")
 parser.add_argument("--cancer_type", choices=["ovarian", "breast", "melanoma"])
 parser.add_argument("--output_dir", type=str)
@@ -121,16 +121,23 @@ def write_to_output(data, outfile_name):
 def keep_normalized_timex(pandas_col) -> bool:
     normalized_timex = pandas_col.normed_timex
     return normalized_timex.split("-")[0].isnumeric()
-def impute_relative_timexes(dataframe: pd.DataFame) -> pd.DataFrame:
-    dataframe.loc[dataframe["normed_timex"]=="PRESENT_REF"] = dataframe["DCT"]
+
+
+def impute_relative_timexes(dataframe: pd.DataFrame) -> pd.DataFrame:
+    dataframe.loc[
+        dataframe["normed_timex"] == "PRESENT_REF", "normed_timex"
+    ] = dataframe.loc[dataframe["normed_timex"] == "PRESENT_REF", "DCT"]
     return dataframe
+
 
 # not implementing prune by modality and
 # prune by polarity since that's currently happening
 # upstream to save processing time.
 # you can turn that off in
 # timeline_delegator.py in the Docker
-def convert_docker_output(docker_tsv_output_path: str, impute_relative: bool) -> Tuple[List[str], Set[str]]:
+def convert_docker_output(
+    docker_tsv_output_path: str, impute_relative: bool
+) -> Tuple[List[str], Set[str]]:
     docker_output_dataframe = pd.read_csv(docker_tsv_output_path, sep="\t")
 
     no_none_tlinks = docker_output_dataframe[
@@ -169,7 +176,7 @@ def main():
     args = parser.parse_args()
 
     timelines_tups, no_discovery_pt_ids = convert_docker_output(
-        args.docker_tsv_output_path
+        args.input_tsv, args.impute_relative
     )
 
     timelines_deduplicated = deduplicate(timelines_tups)
@@ -179,7 +186,10 @@ def main():
     for patient_id in no_discovery_pt_ids:
         resolved_timelines[patient_id] = []
 
-    outfile_name = args.cancer_type + "_dev_system_timelines"
+    outfile_name = args.cancer_type + "_timelines"
+
+    if args.impute_relative:
+        outfile_name += "_impute_relative"
 
     outfile_name += ".json"
 

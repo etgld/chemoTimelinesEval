@@ -4,7 +4,6 @@ import logging
 import os
 from collections import defaultdict
 from datetime import datetime
-from itertools import chain
 
 import dateutil.parser
 
@@ -637,8 +636,8 @@ if __name__ == "__main__":
         all_false_pos[pred_patient] = len(false_pos)
         all_false_neg[pred_patient] = len(false_neg)
         if args.debug:
-            fn_fp_debug[patient_id]["false_positive"].extend(false_pos)
-            fn_fp_debug[patient_id]["false_negative"].extend(false_neg)
+            fn_fp_debug[pred_patient]["false_positive"].extend(false_pos)
+            fn_fp_debug[pred_patient]["false_negative"].extend(false_neg)
         local_precision[pred_patient] = p
         local_recall[pred_patient] = r
         local_f1[pred_patient] = f_score
@@ -655,10 +654,9 @@ if __name__ == "__main__":
                 recall = local_recall[patient_id]
                 f1 = local_f1[patient_id]
                 patient_metrics_file.write(f"{patient_id} micro average metrics\n\n")
-                patient_metrics_file.write(f"Micro precision: {micro_precision}\n")
-                patient_metrics_file.write(f"Micro recall: {micro_recall}\n")
-                patient_metrics_file.write(f"Micro f1: {micro_f1}\n")
-                patient_metrics_file.write()
+                patient_metrics_file.write(f"Micro precision: {precision}\n")
+                patient_metrics_file.write(f"Micro recall: {recall}\n")
+                patient_metrics_file.write(f"Micro f1: {f1}\n\n")
     if args.debug:
         with open("patient_level_debug.json", mode="wt") as patient_debug_file:
             json.dump(fn_fp_debug, patient_debug_file, indent=4)
