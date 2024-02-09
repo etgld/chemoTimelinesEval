@@ -2,6 +2,7 @@ import pandas as pd
 import argparse
 import json
 from typing import Tuple, List, Dict, Union
+from datetime import datetime
 
 parser = argparse.ArgumentParser(description="")
 
@@ -49,15 +50,43 @@ class FNDebug:
 
 DebugEvent = Union[FPDebug, FNDebug]
 
-mode_to_eval = {}
+
+def strict_eval(time1: str, time2: str) -> bool:
+    return time1 == time2
+
+
+def relaxed_day_eval(time1: str, time2: str) -> bool:
+    return False
+
+
+def relaxed_month_eval(time1: str, time2: str) -> bool:
+    return False
+
+
+def relaxed_year_eval(time1: str, time2: str) -> bool:
+    return False
+
 
 def correct_time(time1: str, time2: str, eval_mode: str) -> bool:
     if eval_mode in mode_to_eval:
         return mode_to_eval[eval_mode](time1, time2)
     else:
         return False
+
+
+mode_to_eval = {
+    "strict": strict_eval,
+    "relaxed_day": relaxed_day_eval,
+    "relaxed_month": relaxed_month_eval,
+    "relaxed_year": relaxed_year_eval,
+}
+
+
 def collect_error_events(
-        patient_id: str, eval_mode : str, error_dict: Dict[str, List[List[str]]], docker_df: pd.DataFrame
+    patient_id: str,
+    eval_mode: str,
+    error_dict: Dict[str, List[List[str]]],
+    docker_df: pd.DataFrame,
 ) -> Tuple[List[FPDebug], List[FNDebug]]:
     patient_df = docker_df[docker_df["patient_id"].isin([patient_id])]
     fp_events = collect_fp_events(error_dict["FP"], eval_mode, patient_df)
@@ -66,7 +95,7 @@ def collect_error_events(
 
 
 def collect_fp_events(
-    false_positives: List[List[str]], eval_mode :str, patient_df: pd.DataFrame
+    false_positives: List[List[str]], eval_mode: str, patient_df: pd.DataFrame
 ) -> List[FPDebug]:
     def fp_instance(timelines_event: List[str]) -> FPDebug:
         # since the resulting tlink is predetermined
@@ -111,7 +140,9 @@ def write_instances(docker_tsv: str, error_json: str, output_dir: str, eval_mode
     with open(error_json, mode="rt") as json_f:
         patient_to_errors = json.load(json_f)
     for patient_id, error_dict in patient_to_errors.items():
-        fp_events, fn_events = collect_error_events(patient_id, eval_mode, error_dict, docker_df)
+        fp_events, fn_events = collect_error_events(
+            patient_id, eval_mode, error_dict, docker_df
+        )
         write_patient_error_reports(patient_id, fp_events, fn_events, output_dir)
 
 
