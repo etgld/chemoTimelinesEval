@@ -3,6 +3,7 @@ import argparse
 import json
 from typing import Tuple, List, Dict, Union
 from datetime import datetime
+import dateutil.parser
 
 parser = argparse.ArgumentParser(description="")
 
@@ -51,26 +52,42 @@ class FNDebug:
 DebugEvent = Union[FPDebug, FNDebug]
 
 
+def raw_normalize(time: str) -> datetime:
+    time = time.replace("w", "W")
+    if "W" in time:
+        return datetime.strptime(time + "-1", "%Y-W%W-%w")
+    return dateutil.parser.parse(time)
+
+
 def strict_eval(time1: str, time2: str) -> bool:
     return time1 == time2
 
 
 def relaxed_day_eval(time1: str, time2: str) -> bool:
-    return False
+    norm_time1 = raw_normalize(time1)
+    norm_time2 = raw_normalize(time2)
+    # as far as I can tell this is how it works
+    # in eval_timeline.py
+    return norm_time1 == norm_time2
 
 
 def relaxed_month_eval(time1: str, time2: str) -> bool:
-    return False
+    norm_time1 = raw_normalize(time1)
+    norm_time2 = raw_normalize(time2)
+    return (norm_time1.year, norm_time1.month) == (norm_time2.year, norm_time2.month)
 
 
 def relaxed_year_eval(time1: str, time2: str) -> bool:
-    return False
+    norm_time1 = raw_normalize(time1)
+    norm_time2 = raw_normalize(time2)
+    return norm_time1.year == norm_time2.year
 
 
 def correct_time(time1: str, time2: str, eval_mode: str) -> bool:
     if eval_mode in mode_to_eval:
         return mode_to_eval[eval_mode](time1, time2)
     else:
+        ValueError(f"You picked a non existant mode: {eval_mode}")
         return False
 
 
