@@ -132,7 +132,20 @@ def collect_fn_events(
 def write_patient_error_reports(
     patient_id: str, fp_events: List[FPDebug], fn_events: List[FNDebug], output_dir: str
 ):
-    pass
+    fn = output_dir + "/" + patient_id + "_error_analysis.txt"
+    fp_str = (
+        "\n\nFalse Positives\n\n" + "\n".join(map(str, fp_events))
+        if len(fp_events) > 0
+        else ""
+    )
+    fn_str = (
+        "\n\nFalse Positives\n\n" + "\n".join(map(str, fn_events))
+        if len(fn_events) > 0
+        else ""
+    )
+    with open(fn, "wt") as fn_out:
+        fn_out.write(fp_str)
+        fn_out.write(fn_str)
 
 
 def write_instances(docker_tsv: str, error_json: str, output_dir: str, eval_mode: str):
