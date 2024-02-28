@@ -30,7 +30,10 @@ class FPDebug:
         self.instances = event_instances
 
     def generate_report(self) -> str:
-        return ""
+        def inst2str(inst: instance) -> str:
+            return "\t".join(iter(inst))
+
+        return "\n".join(map(inst2str, self.instances))
 
     def __str__(self) -> str:
         report = self.generate_report()
@@ -42,7 +45,10 @@ class FNDebug:
         self.instances = event_instances
 
     def generate_report(self) -> str:
-        return ""
+        def inst2str(inst: instance) -> str:
+            return "\t".join(iter(inst))
+
+        return "\n".join(map(inst2str, self.instances))
 
     def __str__(self) -> str:
         report = self.generate_report()
@@ -164,7 +170,7 @@ def write_patient_error_reports(
         else ""
     )
     fn_str = (
-        "\n\nFalse Positives\n\n" + "\n".join(map(str, fn_events))
+        "\n\nFalse Negatives\n\n" + "\n".join(map(str, fn_events))
         if len(fn_events) > 0
         else ""
     )
