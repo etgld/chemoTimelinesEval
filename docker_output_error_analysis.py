@@ -26,14 +26,14 @@ label_to_hierarchy = {
 
 
 class FPDebug:
-    def __init__(self, event_instances: List[instance]) -> None:
-        self.instances = event_instances
+    def __init__(self, pred_instances: List[instance]) -> None:
+        self.pred_instances = pred_instances
 
     def generate_report(self) -> str:
         def inst2str(inst: instance) -> str:
-            return "\t".join(iter(inst))
+            return "\t".join(inst)
 
-        return "\n".join(map(inst2str, self.instances))
+        return "\n".join(map(inst2str, self.pred_instances))
 
     def __str__(self) -> str:
         report = self.generate_report()
@@ -41,14 +41,14 @@ class FPDebug:
 
 
 class FNDebug:
-    def __init__(self, event_instances: List[instance]) -> None:
-        self.instances = event_instances
+    def __init__(self, pred_instances: List[instance]) -> None:
+        self.pred_instances = pred_instances
 
     def generate_report(self) -> str:
         def inst2str(inst: instance) -> str:
-            return "\t".join(iter(inst))
+            return "\t".join(inst)
 
-        return "\n".join(map(inst2str, self.instances))
+        return "\n".join(map(inst2str, self.pred_instances))
 
     def __str__(self) -> str:
         report = self.generate_report()
@@ -132,7 +132,7 @@ def collect_fp_events(
                     lambda t: correct_time(t, normed_timex, eval_mode)
                 )
             )
-        ][["chemo_text", "normed_timex", "tlink"]].values.tolist()
+        ][["chemo_text", "normed_timex", "tlink", "note_name"]].values.tolist()
         return FPDebug(summarization_preimage)
 
     return [fp_instance(event) for event in false_positives]
@@ -154,7 +154,8 @@ def collect_fn_events(
                     lambda t: correct_time(t, normed_timex, eval_mode)
                 )
             )
-        ][["chemo_text", "normed_timex", "tlink"]].values.tolist()
+        ][["chemo_text", "normed_timex", "tlink", "note_name"]].values.tolist()
+        
         return FNDebug(summarization_preimage)
 
     return [fn_instance(event) for event in false_negatives]
