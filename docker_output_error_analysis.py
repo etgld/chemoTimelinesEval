@@ -106,8 +106,8 @@ def collect_error_events(
     docker_df: pd.DataFrame,
 ) -> Tuple[List[FPDebug], List[FNDebug]]:
     patient_df = docker_df[docker_df["patient_id"].isin([patient_id])]
-    fp_events = collect_fp_events(error_dict["FP"], eval_mode, patient_df)
-    fn_events = collect_fn_events(error_dict["FN"], eval_mode, patient_df)
+    fp_events = collect_fp_events(error_dict["false_positive"], eval_mode, patient_df)
+    fn_events = collect_fn_events(error_dict["false_negative"], eval_mode, patient_df)
     return fp_events, fn_events
 
 
@@ -121,7 +121,11 @@ def collect_fp_events(
         summarization_preimage = patient_df.loc[
             (patient_df["chemo_text"] == chemo_text)
             & (patient_df["tlink"] != "none")
-            & (correct_time(patient_df["normed_timex"], normed_timex, eval_mode))
+            & (
+                patient_df["normed_timex"].apply(
+                    lambda t: correct_time(t, normed_timex, eval_mode)
+                )
+            )
         ][["chemo_text", "normed_timex", "tlink"]].values.tolist()
         return FPDebug(summarization_preimage)
 
@@ -139,7 +143,11 @@ def collect_fn_events(
             (patient_df["chemo_text"] == chemo_text)
             # need to turn off none-filtering here
             # & (patient_df["tlink"] != "none")
-            & (correct_time(patient_df["normed_timex"], normed_timex, eval_mode))
+            & (
+                patient_df["normed_timex"].apply(
+                    lambda t: correct_time(t, normed_timex, eval_mode)
+                )
+            )
         ][["chemo_text", "normed_timex", "tlink"]].values.tolist()
         return FNDebug(summarization_preimage)
 
