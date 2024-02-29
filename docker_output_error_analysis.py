@@ -75,34 +75,38 @@ class FNDebug:
 DebugEvent = Union[FPDebug, FNDebug]
 
 
-def raw_normalize(time: str) -> datetime:
-    time = time.replace("w", "W")
+def raw_normalize(time: str) -> str:
+    return time.lower().split("t")[0]
+
+
+def datetime_normalize(time: str) -> datetime:
+    time = raw_normalize(time)
     if "W" in time:
         return datetime.strptime(time + "-1", "%Y-W%W-%w")
     return dateutil.parser.parse(time)
 
 
 def strict_eval(time1: str, time2: str) -> bool:
-    return time1 == time2
+    return raw_normalize(time1) == raw_normalize(time2)
 
 
 def relaxed_day_eval(time1: str, time2: str) -> bool:
-    norm_time1 = raw_normalize(time1)
-    norm_time2 = raw_normalize(time2)
+    norm_time1 = datetime_normalize(time1)
+    norm_time2 = datetime_normalize(time2)
     # as far as I can tell this is how it works
     # in eval_timeline.py
     return norm_time1 == norm_time2
 
 
 def relaxed_month_eval(time1: str, time2: str) -> bool:
-    norm_time1 = raw_normalize(time1)
-    norm_time2 = raw_normalize(time2)
+    norm_time1 = datetime_normalize(time1)
+    norm_time2 = datetime_normalize(time2)
     return (norm_time1.year, norm_time1.month) == (norm_time2.year, norm_time2.month)
 
 
 def relaxed_year_eval(time1: str, time2: str) -> bool:
-    norm_time1 = raw_normalize(time1)
-    norm_time2 = raw_normalize(time2)
+    norm_time1 = datetime_normalize(time1)
+    norm_time2 = datetime_normalize(time2)
     return norm_time1.year == norm_time2.year
 
 
@@ -120,6 +124,11 @@ def compatible_time(time1: str, time2: str, eval_mode: str) -> bool:
     else:
         ValueError(f"You picked a non existant mode: {eval_mode}")
         return False
+
+
+# Pandas has really dumb syntax
+def compatible_chemos(chemo1: str, chemo2: str):
+    return chemo1.lower() == chemo2.lower()
 
 
 def collect_error_events(
@@ -142,14 +151,14 @@ def collect_fp_events(
         # given the conflict resolution rules
         chemo_text, tlink, normed_timex = timelines_event
         summarization_preimage = patient_df.loc[
-            (patient_df["chemo_text"] == chemo_text.lower())
+            (patient_df["chemo_text"].apply(lambda t: compatible_chemos(t, chemo_text)))
             & (patient_df["tlink"] == tlink.lower())
             & (
                 patient_df["normed_timex"].apply(
                     lambda t: compatible_time(t, normed_timex, eval_mode)
                 )
             )
-        ][["chemo_text", "tlink", "normed timex", "note_name"]].values.tolist()
+        ][["chemo_text", "tlink", "normed_timex", "note_name"]].values.tolist()
         return FPDebug([[*timelines_event, eval_mode], *summarization_preimage])
 
     return [fp_instance(event) for event in false_positives]
@@ -163,7 +172,7 @@ def collect_fn_events(
         # given the conflict resolution rules
         chemo_text, tlink, normed_timex = timelines_event
         summarization_preimage = patient_df.loc[
-            (patient_df["chemo_text"] == chemo_text)
+            (patient_df["chemo_text"].apply(lambda t: compatible_chemos(t, chemo_text)))
             # need to turn off none-filtering here
             # & (patient_df["tlink"] != "none")
             & (
@@ -171,7 +180,7 @@ def collect_fn_events(
                     lambda t: compatible_time(t, normed_timex, eval_mode)
                 )
             )
-        ][["chemo_text", "tlink", "normed timex", "note_name"]].values.tolist()
+        ][["chemo_text", "tlink", "normed_timex", "note_name"]].values.tolist()
         return FNDebug([[*timelines_event, eval_mode], *summarization_preimage])
 
     return [fn_instance(event) for event in false_negatives]
