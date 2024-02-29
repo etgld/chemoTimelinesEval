@@ -89,7 +89,7 @@ def relaxed_year_eval(time1: str, time2: str) -> bool:
     return norm_time1.year == norm_time2.year
 
 
-def correct_time(time1: str, time2: str, eval_mode: str) -> bool:
+def compatible_time(time1: str, time2: str, eval_mode: str) -> bool:
     if eval_mode in mode_to_eval:
         return mode_to_eval[eval_mode](time1, time2)
     else:
@@ -123,13 +123,13 @@ def collect_fp_events(
     def fp_instance(timelines_event: List[str]) -> FPDebug:
         # since the resulting tlink is predetermined
         # given the conflict resolution rules
-        chemo_text, _, normed_timex = timelines_event
+        chemo_text, tlink, normed_timex = timelines_event
         summarization_preimage = patient_df.loc[
-            (patient_df["chemo_text"] == chemo_text)
-            & (patient_df["tlink"] != "none")
+            (patient_df["chemo_text"].lower() == chemo_text.lower())
+            & (patient_df["tlink"].lower() == tlink.lower())
             & (
                 patient_df["normed_timex"].apply(
-                    lambda t: correct_time(t, normed_timex, eval_mode)
+                    lambda t: compatible_time(t, normed_timex, eval_mode)
                 )
             )
         ][["chemo_text", "normed_timex", "tlink", "note_name"]].values.tolist()
@@ -151,7 +151,7 @@ def collect_fn_events(
             # & (patient_df["tlink"] != "none")
             & (
                 patient_df["normed_timex"].apply(
-                    lambda t: correct_time(t, normed_timex, eval_mode)
+                    lambda t: compatible_time(t, normed_timex, eval_mode)
                 )
             )
         ][["chemo_text", "normed_timex", "tlink", "note_name"]].values.tolist()
