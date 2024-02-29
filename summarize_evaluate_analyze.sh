@@ -5,8 +5,13 @@
 # arg 3 is split (train/dev/test)
 # arg 4 gold data dir
 # arg 5 eval mode
-TMPDIR=".tmp_${2}_${3}_$(date +%F_%T)"
-ERRDIR="error_analysis_${2}_${3}_$(date +%F_%T)"
+TMPDIR="$(readlink -m ./.tmp_${2}_${3}_$(date +%F_%T))"
+ERRDIR="$(readlink -m ./error_analysis_${2}_${3}_$(date +%F_%T))"
+TASKDIR="$(readlink -m {4}/subtask1/)"
+# shouldn't need readlink for these since TASKDIR
+# should already be absolute
+ALLIDS="${TASKDIR}/All_Patient_IDs/${2}_${3}_patient_ids.txt"
+GOLDTIMELINE="${TASKDIR}/Gold_Timelines_allPatients/${2}_${3}_all_patients_gold_timelines.json"
 mkdir $TMPDIR
 mkdir $ERRDIR
 
@@ -15,20 +20,23 @@ cd $TMPDIR
 SYSTEMTIMELINE="${2}_${3}_system_timelines.json"
 
 case $5 in
-
     strict)
-        python eval_timeline.py --pred_path $SYSTEMTIMELINE
+        EVALMODE="--strict"
         ;;
     day)
-        python eval_timeline.py --pred_path $SYSTEMTIMELINE
+        EVALMODE="--relaxed_to day"
         ;;
     month)
-        python eval_timeline.py --pred_path $SYSTEMTIMELINE
+        EVALMODE="--relaxed_to month"
         ;;
     year)
-        python eval_timeline.py --pred_path $SYSTEMTIMELINE
+        EVALMODE="--relaxed_to year"
         ;;
     *)
         echo -n "Incorrect mode, choose one of strict, day, month, year"
+        exit 1
         ;;
-    esac
+esac
+
+python eval_timeline.py --debug --pred_path $SYSTEMTIMELINE --gold_path $GOLDTIMELINE --all_id_path $ALLIDS $EVALMODE
+
