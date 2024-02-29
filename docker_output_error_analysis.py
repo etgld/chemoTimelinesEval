@@ -12,9 +12,12 @@ parser = argparse.ArgumentParser(description="")
 parser.add_argument("--docker_tsv", type=str)
 parser.add_argument("--error_json", type=str)
 parser.add_argument("--output_dir", type=str)
+parser.add_argument("--strict", action="store_true", help="do strict eval")
 parser.add_argument(
-    "--eval_mode",
-    choices=["strict", "day", "month", "year"],
+    "--relaxed_to",
+    help="Type 'year' to only evaluate year, 'month' to evaluate year and month, "
+    "or 'day' to evaluate year-month-day",
+    choices=["day", "month", "year"],
 )
 # chemo, rel, timex, filename
 instance = List[str]
@@ -28,6 +31,7 @@ label_to_hierarchy = {
 
 source_header = ["chemo", "tlink", "normed timex", "mode"]
 pred_header = ["chemo", "tlink", "normed timex", "note name"]
+eval_modes = {"strict", "day", "month", "year"}
 
 
 class FPDebug:
@@ -218,7 +222,11 @@ def write_instances(docker_tsv: str, error_json: str, output_dir: str, eval_mode
 
 def main():
     args = parser.parse_args()
-    write_instances(args.docker_tsv, args.error_json, args.output_dir, args.eval_mode)
+    if args.strict:
+        eval_mode = "strict"
+    else:
+        eval_mode = args.relaxed_to
+    write_instances(args.docker_tsv, args.error_json, args.output_dir, eval_mode)
 
 
 if __name__ == "__main__":
