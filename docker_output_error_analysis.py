@@ -142,14 +142,14 @@ def collect_fp_events(
         # given the conflict resolution rules
         chemo_text, tlink, normed_timex = timelines_event
         summarization_preimage = patient_df.loc[
-            (patient_df["chemo_text"].lower() == chemo_text.lower())
-            & (patient_df["tlink"].lower() == tlink.lower())
+            (patient_df["chemo_text"] == chemo_text.lower())
+            & (patient_df["tlink"] == tlink.lower())
             & (
                 patient_df["normed_timex"].apply(
                     lambda t: compatible_time(t, normed_timex, eval_mode)
                 )
             )
-        ][["chemo_text", "normed_timex", "tlink", "note_name"]].values.tolist()
+        ][["chemo_text", "tlink", "normed timex", "note_name"]].values.tolist()
         return FPDebug([[*timelines_event, eval_mode], *summarization_preimage])
 
     return [fp_instance(event) for event in false_positives]
@@ -171,7 +171,7 @@ def collect_fn_events(
                     lambda t: compatible_time(t, normed_timex, eval_mode)
                 )
             )
-        ][["chemo_text", "normed_timex", "tlink", "note_name"]].values.tolist()
+        ][["chemo_text", "tlink", "normed timex", "note_name"]].values.tolist()
         return FNDebug([[*timelines_event, eval_mode], *summarization_preimage])
 
     return [fn_instance(event) for event in false_negatives]
