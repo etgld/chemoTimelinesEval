@@ -8,8 +8,8 @@
 DOCKERTSV="$(readlink -m $1)"
 CTYPE=$2
 MODEARG=$5
-TMPDIR="$(readlink -m ./.tmp_${2}_${3}_$(date +%F_%T))"
-ERRDIR="$(readlink -m ./error_analysis_${2}_${3}_$(date +%F_%T))"
+TMPDIR="$(readlink -m ./.tmp_${2}_${3}_$(date +%a_%b_%d_%Y_%H_%M_%S_%p_%Z))"
+ERRDIR="$(readlink -m ./error_analysis_${2}_${3}_$(date +%a_%b_%d_%Y_%H_%M_%S_%p_%Z))"
 TASKDIR="$(readlink -m ${4}/subtask1/)"
 # shouldn't need readlink for these since TASKDIR
 # should already be absolute
@@ -20,7 +20,8 @@ mkdir $ERRDIR
 
 python docker_output_to_timeline.py --input_tsv $DOCKERTSV --cancer_type $CTYPE --output_dir $TMPDIR
 cd $TMPDIR
-SYSTEMTIMELINE="${2}_${3}_system_timelines.json"
+# SYSTEMTIMELINE="${2}_${3}_system_timelines.json"
+SYSTEMTIMELINE="${2}_timelines.json"
 
 case $MODEARG in
     strict)
@@ -41,5 +42,5 @@ case $MODEARG in
         ;;
 esac
 
-python eval_timeline.py --debug --pred_path $SYSTEMTIMELINE --gold_path $GOLDTIMELINE --all_id_path $ALLIDS $EVALMODE
-python docker_output_error_analysis.py --docker_tsv $DOCKERTSV --error_json ./patient_level_debug.json --output_dir $ERRDIR $EVALMODE
+python ../eval_timeline.py --debug --pred_path $SYSTEMTIMELINE --gold_path $GOLDTIMELINE --all_id_path $ALLIDS $EVALMODE
+python ../docker_output_error_analysis.py --docker_tsv $DOCKERTSV --error_json ./patient_level_debug.json --output_dir $ERRDIR $EVALMODE
