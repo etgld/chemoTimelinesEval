@@ -1,9 +1,11 @@
-import pandas as pd
 import argparse
 import json
-from typing import Tuple, List, Dict, Union
 from datetime import datetime
+from typing import Dict, List, Tuple, Union
+
 import dateutil.parser
+import pandas as pd
+from tabulate import tabulate
 
 parser = argparse.ArgumentParser(description="")
 
@@ -15,7 +17,7 @@ parser.add_argument(
     choices=["strict", "day", "month", "year"],
 )
 # chemo, rel, timex, filename
-instance = Tuple[str, str, str, str]
+instance = List[str]
 label_to_hierarchy = {
     "begins-on": 1,
     "ends-on": 1,
@@ -24,16 +26,25 @@ label_to_hierarchy = {
     "before": 3,
 }
 
+source_header = ["chemo", "tlink", "normed timex", "mode"]
+pred_header = ["chemo", "tlink", "normed timex", "note name"]
+
 
 class FPDebug:
-    def __init__(self, pred_instances: List[instance]) -> None:
-        self.pred_instances = pred_instances
+    def __init__(self, instances: List[instance]) -> None:
+        self.source_instance = instances[0]
+        self.pred_instances = instances[1:]
 
     def generate_report(self) -> str:
-        def inst2str(inst: instance) -> str:
-            return "\t".join(inst)
-
-        return "\n".join(map(inst2str, self.pred_instances))
+        source_table = tabulate(
+            [source_header, self.source_instance], headers="firstrow"
+        )
+        pred_table = (
+            tabulate([pred_header, *self.pred_instances], headers="firstrow")
+            if len(self.pred_instances) > 0
+            else ""
+        )
+        return f"\n\nSource Instance:\n\n{source_table}\n\nPredicted Instances:\n\n{pred_table}"
 
     def __str__(self) -> str:
         report = self.generate_report()
@@ -41,14 +52,20 @@ class FPDebug:
 
 
 class FNDebug:
-    def __init__(self, pred_instances: List[instance]) -> None:
-        self.pred_instances = pred_instances
+    def __init__(self, instances: List[instance]) -> None:
+        self.source_instance = instances[0]
+        self.pred_instances = instances[1:]
 
     def generate_report(self) -> str:
-        def inst2str(inst: instance) -> str:
-            return "\t".join(inst)
-
-        return "\n".join(map(inst2str, self.pred_instances))
+        source_table = tabulate(
+            [source_header, self.source_instance], headers="firstrow"
+        )
+        pred_table = (
+            tabulate([pred_header, *self.pred_instances], headers="firstrow")
+            if len(self.pred_instances) > 0
+            else ""
+        )
+        return f"\n\nSource Instance:\n\n{source_table}\n\nPredicted Instances:\n\n{pred_table}"
 
     def __str__(self) -> str:
         report = self.generate_report()
@@ -89,20 +106,20 @@ def relaxed_year_eval(time1: str, time2: str) -> bool:
     return norm_time1.year == norm_time2.year
 
 
-def compatible_time(time1: str, time2: str, eval_mode: str) -> bool:
-    if eval_mode in mode_to_eval:
-        return mode_to_eval[eval_mode](time1, time2)
-    else:
-        ValueError(f"You picked a non existant mode: {eval_mode}")
-        return False
-
-
 mode_to_eval = {
     "strict": strict_eval,
     "relaxed_day": relaxed_day_eval,
     "relaxed_month": relaxed_month_eval,
     "relaxed_year": relaxed_year_eval,
 }
+
+
+def compatible_time(time1: str, time2: str, eval_mode: str) -> bool:
+    if eval_mode in mode_to_eval:
+        return mode_to_eval[eval_mode](time1, time2)
+    else:
+        ValueError(f"You picked a non existant mode: {eval_mode}")
+        return False
 
 
 def collect_error_events(
@@ -133,7 +150,7 @@ def collect_fp_events(
                 )
             )
         ][["chemo_text", "normed_timex", "tlink", "note_name"]].values.tolist()
-        return FPDebug(summarization_preimage)
+        return FPDebug([[*timelines_event, eval_mode], *summarization_preimage])
 
     return [fp_instance(event) for event in false_positives]
 
@@ -144,7 +161,7 @@ def collect_fn_events(
     def fn_instance(timelines_event: List[str]) -> FNDebug:
         # since the resulting tlink is predetermined
         # given the conflict resolution rules
-        chemo_text, _, normed_timex = timelines_event
+        chemo_text, tlink, normed_timex = timelines_event
         summarization_preimage = patient_df.loc[
             (patient_df["chemo_text"] == chemo_text)
             # need to turn off none-filtering here
@@ -155,8 +172,7 @@ def collect_fn_events(
                 )
             )
         ][["chemo_text", "normed_timex", "tlink", "note_name"]].values.tolist()
-        
-        return FNDebug(summarization_preimage)
+        return FNDebug([[*timelines_event, eval_mode], *summarization_preimage])
 
     return [fn_instance(event) for event in false_negatives]
 
