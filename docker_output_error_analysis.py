@@ -2,6 +2,7 @@ import argparse
 import json
 from datetime import datetime
 from typing import Dict, List, Tuple, Union
+from collections import Counter
 
 import dateutil.parser
 import pandas as pd
@@ -70,6 +71,8 @@ class ErrorDebug:
         report = self.generate_report()
         return report
 
+    def get_error_cause(self ) -> ErrorCause:
+        return self.error_cause
 
 def raw_normalize(time: str) -> str:
     return time.lower().split("t")[0]
@@ -228,7 +231,7 @@ def collect_fn_events(
         return ErrorDebug(
             [[*timelines_event, eval_mode], *summarization_preimage],
             ErrorType.FALSE_NEGATIVE,
-            error_cause
+            error_cause,
         )
 
     return [fn_instance(event) for event in false_negatives]
@@ -241,6 +244,10 @@ def write_patient_error_reports(
     output_dir: str,
 ):
     fn = output_dir + "/" + patient_id + "_error_analysis.txt"
+
+    fp_error_causes = Counter(map(ErrorDebug.get_error_cause, fp_events))
+    fn_error_causes = Counter(map(ErrorDebug.get_error_cause, fn_events))
+
     fp_str = (
         "\n\nFalse Positives\n\n" + "\n".join(map(str, fp_events))
         if len(fp_events) > 0
