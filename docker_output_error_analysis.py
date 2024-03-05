@@ -6,6 +6,7 @@ from typing import Dict, List, Tuple, Union
 import dateutil.parser
 import pandas as pd
 from tabulate import tabulate
+from enum import Enum
 
 parser = argparse.ArgumentParser(description="")
 
@@ -34,10 +35,25 @@ pred_header = ["chemo", "tlink", "normed timex", "note name"]
 eval_modes = {"strict", "day", "month", "year"}
 
 
-class FPDebug:
-    def __init__(self, instances: List[instance]) -> None:
+class ErrorType(Enum):
+    FALSE_POSITIVE = 1
+    FALSE_NEGATIVE = 2
+
+
+class ErrorCause(Enum):
+    TLINK = 1
+    CHEMO = 2
+    TIMEX = 3
+
+
+class ErrorDebug:
+    def __init__(
+        self, instances: List[instance], error_type: ErrorType, error_cause: ErrorCause
+    ) -> None:
         self.source_instance = instances[0]
         self.pred_instances = instances[1:]
+        self.error_type = error_type
+        self.error_cause = error_cause
 
     def generate_report(self) -> str:
         source_table = tabulate(
@@ -53,30 +69,6 @@ class FPDebug:
     def __str__(self) -> str:
         report = self.generate_report()
         return report
-
-
-class FNDebug:
-    def __init__(self, instances: List[instance]) -> None:
-        self.source_instance = instances[0]
-        self.pred_instances = instances[1:]
-
-    def generate_report(self) -> str:
-        source_table = tabulate(
-            [source_header, self.source_instance], headers="firstrow"
-        )
-        pred_table = (
-            tabulate([pred_header, *self.pred_instances], headers="firstrow")
-            if len(self.pred_instances) > 0
-            else ""
-        )
-        return f"\n\nSource Instance:\n\n{source_table}\n\nPredicted Instances:\n\n{pred_table}"
-
-    def __str__(self) -> str:
-        report = self.generate_report()
-        return report
-
-
-DebugEvent = Union[FPDebug, FNDebug]
 
 
 def raw_normalize(time: str) -> str:
@@ -140,58 +132,113 @@ def collect_error_events(
     eval_mode: str,
     error_dict: Dict[str, List[List[str]]],
     docker_df: pd.DataFrame,
-) -> Tuple[List[FPDebug], List[FNDebug]]:
+) -> Tuple[List[ErrorDebug], List[ErrorDebug]]:
     patient_df = docker_df[docker_df["patient_id"].isin([patient_id])]
     fp_events = collect_fp_events(error_dict["false_positive"], eval_mode, patient_df)
     fn_events = collect_fn_events(error_dict["false_negative"], eval_mode, patient_df)
     return fp_events, fn_events
 
 
+def preimage_and_cause(
+    error_type: ErrorType,
+    chemo_text: str,
+    tlink: str,
+    normed_timex: str,
+    eval_mode: str,
+    patient_df: pd.DataFrame,
+) -> Tuple[List[instance], ErrorCause]:
+    def row_chemo_compatible(row_chemo: str) -> bool:
+        return compatible_chemos(row_chemo, chemo_text)
+
+    chemo_matches = patient_df.loc[patient_df["chemo_text"].apply(row_chemo_compatible)]
+    if len(chemo_matches) == 0:
+        return [], ErrorCause.CHEMO
+
+    def row_timex_compatible(row_timex: str) -> bool:
+        return compatible_time(row_timex, normed_timex, eval_mode)
+
+    timex_chemo_matches = chemo_matches.loc[
+        chemo_matches["normed_timex"].apply(row_timex_compatible)
+    ]
+
+    if len(timex_chemo_matches) == 0:
+        return [], ErrorCause.TIMEX
+
+    if error_type == ErrorType.FALSE_NEGATIVE:
+        return (
+            timex_chemo_matches[
+                ["chemo_text", "tlink", "normed_timex", "note_name"]
+            ].values.tolist(),
+            ErrorCause.TLINK,
+        )
+
+    def row_tlink_compatible(row_tlink: str) -> bool:
+        return row_tlink.lower() == tlink.lower()
+
+    full_matches = timex_chemo_matches.loc[
+        timex_chemo_matches["tlink"].apply(row_tlink_compatible)
+    ]
+    return (
+        full_matches[
+            ["chemo_text", "tlink", "normed_timex", "note_name"]
+        ].values.tolist(),
+        ErrorCause.TLINK,
+    )
+
+
 def collect_fp_events(
     false_positives: List[List[str]], eval_mode: str, patient_df: pd.DataFrame
-) -> List[FPDebug]:
-    def fp_instance(timelines_event: List[str]) -> FPDebug:
+) -> List[ErrorDebug]:
+    def fp_instance(timelines_event: List[str]) -> ErrorDebug:
         # since the resulting tlink is predetermined
         # given the conflict resolution rules
         chemo_text, tlink, normed_timex = timelines_event
-        summarization_preimage = patient_df.loc[
-            (patient_df["chemo_text"].apply(lambda t: compatible_chemos(t, chemo_text)))
-            & (patient_df["tlink"] == tlink.lower())
-            & (
-                patient_df["normed_timex"].apply(
-                    lambda t: compatible_time(t, normed_timex, eval_mode)
-                )
-            )
-        ][["chemo_text", "tlink", "normed_timex", "note_name"]].values.tolist()
-        return FPDebug([[*timelines_event, eval_mode], *summarization_preimage])
+        summarization_preimage, error_cause = preimage_and_cause(
+            ErrorType.FALSE_POSITIVE,
+            chemo_text,
+            tlink,
+            normed_timex,
+            eval_mode,
+            patient_df,
+        )
+        return ErrorDebug(
+            [[*timelines_event, eval_mode], *summarization_preimage],
+            ErrorType.FALSE_POSITIVE,
+            error_cause,
+        )
 
     return [fp_instance(event) for event in false_positives]
 
 
 def collect_fn_events(
     false_negatives: List[List[str]], eval_mode: str, patient_df: pd.DataFrame
-) -> List[FNDebug]:
-    def fn_instance(timelines_event: List[str]) -> FNDebug:
+) -> List[ErrorDebug]:
+    def fn_instance(timelines_event: List[str]) -> ErrorDebug:
         # since the resulting tlink is predetermined
         # given the conflict resolution rules
         chemo_text, tlink, normed_timex = timelines_event
-        summarization_preimage = patient_df.loc[
-            (patient_df["chemo_text"].apply(lambda t: compatible_chemos(t, chemo_text)))
-            # need to turn off none-filtering here
-            # & (patient_df["tlink"] != "none")
-            & (
-                patient_df["normed_timex"].apply(
-                    lambda t: compatible_time(t, normed_timex, eval_mode)
-                )
-            )
-        ][["chemo_text", "tlink", "normed_timex", "note_name"]].values.tolist()
-        return FNDebug([[*timelines_event, eval_mode], *summarization_preimage])
+        summarization_preimage, error_cause = preimage_and_cause(
+            ErrorType.FALSE_POSITIVE,
+            chemo_text,
+            tlink,
+            normed_timex,
+            eval_mode,
+            patient_df,
+        )
+        return ErrorDebug(
+            [[*timelines_event, eval_mode], *summarization_preimage],
+            ErrorType.FALSE_NEGATIVE,
+            error_cause
+        )
 
     return [fn_instance(event) for event in false_negatives]
 
 
 def write_patient_error_reports(
-    patient_id: str, fp_events: List[FPDebug], fn_events: List[FNDebug], output_dir: str
+    patient_id: str,
+    fp_events: List[ErrorDebug],
+    fn_events: List[ErrorDebug],
+    output_dir: str,
 ):
     fn = output_dir + "/" + patient_id + "_error_analysis.txt"
     fp_str = (
