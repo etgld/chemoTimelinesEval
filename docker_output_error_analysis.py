@@ -243,29 +243,6 @@ def get_error_cause_count(events: List[ErrorDebug]) -> Counter[ErrorCause]:
     return Counter(map(ErrorDebug.get_error_cause, events))
 
 
-def write_patient_error_reports(
-    patient_id: str,
-    fp_events: List[ErrorDebug],
-    fn_events: List[ErrorDebug],
-    output_dir: str,
-) -> None:
-    fn = output_dir + "/" + patient_id + "_error_analysis.txt"
-
-    fp_str = (
-        "\n\nFalse Positives\n\n" + "\n".join(map(str, fp_events))
-        if len(fp_events) > 0
-        else ""
-    )
-    fn_str = (
-        "\n\nFalse Negatives\n\n" + "\n".join(map(str, fn_events))
-        if len(fn_events) > 0
-        else ""
-    )
-    with open(fn, "wt") as fn_out:
-        fn_out.write(fp_str)
-        fn_out.write(fn_str)
-
-
 def get_type_raw_total(
     error_type: ErrorType,
     patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]],
@@ -308,7 +285,7 @@ def patients_by_cause(
 
 
 def write_summaries(
-    patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]]
+    patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]], output_dir: str
 ) -> None:
     fp_total: int = get_type_raw_total(ErrorType.FALSE_POSITIVE, patient_error_dict)
     fn_total: int = get_type_raw_total(ErrorType.FALSE_NEGATIVE, patient_error_dict)
@@ -329,6 +306,29 @@ def write_summaries(
     }
 
 
+def write_patient_error_reports(
+    patient_id: str,
+    fp_events: List[ErrorDebug],
+    fn_events: List[ErrorDebug],
+    output_dir: str,
+) -> None:
+    fn = output_dir + "/" + patient_id + "_error_analysis.txt"
+
+    fp_str = (
+        "\n\nFalse Positives\n\n" + "\n".join(map(str, fp_events))
+        if len(fp_events) > 0
+        else ""
+    )
+    fn_str = (
+        "\n\nFalse Negatives\n\n" + "\n".join(map(str, fn_events))
+        if len(fn_events) > 0
+        else ""
+    )
+    with open(fn, "wt") as fn_out:
+        fn_out.write(fp_str)
+        fn_out.write(fn_str)
+
+
 def write_instances_and_summaries(
     docker_tsv: str, error_json: str, output_dir: str, eval_mode: str
 ) -> None:
@@ -345,7 +345,7 @@ def write_instances_and_summaries(
             ErrorType.FALSE_NEGATIVE: get_error_cause_count(fn_events),
             ErrorType.FALSE_POSITIVE: get_error_cause_count(fp_events),
         }
-    write_summaries(patient_error_dict)
+    write_summaries(patient_error_dict, output_dir)
 
 
 def main():
