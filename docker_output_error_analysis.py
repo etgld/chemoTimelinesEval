@@ -1,13 +1,16 @@
 import argparse
 import json
-from datetime import datetime
-from typing import Dict, List, Tuple, Union
+import operator
 from collections import Counter
+from datetime import datetime
+from enum import Enum
+from functools import reduce
+from itertools import chain
+from typing import Dict, List, Tuple, cast
 
 import dateutil.parser
 import pandas as pd
 from tabulate import tabulate
-from enum import Enum
 
 parser = argparse.ArgumentParser(description="")
 
@@ -71,8 +74,9 @@ class ErrorDebug:
         report = self.generate_report()
         return report
 
-    def get_error_cause(self ) -> ErrorCause:
+    def get_error_cause(self) -> ErrorCause:
         return self.error_cause
+
 
 def raw_normalize(time: str) -> str:
     return time.lower().split("t")[0]
@@ -136,7 +140,7 @@ def collect_error_events(
     error_dict: Dict[str, List[List[str]]],
     docker_df: pd.DataFrame,
 ) -> Tuple[List[ErrorDebug], List[ErrorDebug]]:
-    patient_df = docker_df[docker_df["patient_id"].isin([patient_id])]
+    patient_df = docker_df.loc[docker_df["patient_id"] == patient_id]
     fp_events = collect_fp_events(error_dict["false_positive"], eval_mode, patient_df)
     fn_events = collect_fn_events(error_dict["false_negative"], eval_mode, patient_df)
     return fp_events, fn_events
@@ -237,16 +241,17 @@ def collect_fn_events(
     return [fn_instance(event) for event in false_negatives]
 
 
+def get_error_cause_count(events: List[ErrorDebug]) -> Dict[ErrorCause, int]:
+    return Counter(map(ErrorDebug.get_error_cause, events))
+
+
 def write_patient_error_reports(
     patient_id: str,
     fp_events: List[ErrorDebug],
     fn_events: List[ErrorDebug],
     output_dir: str,
-):
+) -> None:
     fn = output_dir + "/" + patient_id + "_error_analysis.txt"
-
-    fp_error_causes = Counter(map(ErrorDebug.get_error_cause, fp_events))
-    fn_error_causes = Counter(map(ErrorDebug.get_error_cause, fn_events))
 
     fp_str = (
         "\n\nFalse Positives\n\n" + "\n".join(map(str, fp_events))
@@ -263,15 +268,61 @@ def write_patient_error_reports(
         fn_out.write(fn_str)
 
 
-def write_instances(docker_tsv: str, error_json: str, output_dir: str, eval_mode: str):
-    docker_df = pd.read_csv(docker_tsv, sep="\t")
+def get_type_raw_total(
+    error_type: ErrorType,
+    patient_error_dict: Dict[str, Dict[ErrorType, Dict[ErrorCause, int]]],
+) -> int:
+    return sum(
+        chain.from_iterable(v[error_type].values() for v in patient_error_dict.values())
+    )
+
+
+def get_type_cause_totals(
+    error_type: ErrorType,
+    patient_error_dict: Dict[str, Dict[ErrorType, Dict[ErrorCause, int]]],
+) -> Dict[ErrorCause, int]:
+    return cast(
+        Dict[ErrorCause, int],
+        reduce(
+            Counter.__add__,
+            (Counter(v[error_type]) for v in patient_error_dict.values()),
+        ),
+    )
+
+
+def get_cause_raw_total(
+    error_cause: ErrorCause,
+    patient_error_dict: Dict[str, Dict[ErrorType, Dict[ErrorCause, int]]],
+) -> int:
+    return -1
+
+
+def write_summaries(
+    patient_error_dict: Dict[str, Dict[ErrorType, Dict[ErrorCause, int]]]
+) -> None:
+    fp_total: int = get_type_raw_total(ErrorType.FALSE_POSITIVE, patient_error_dict)
+    fn_total: int = get_type_raw_total(ErrorType.FALSE_NEGATIVE, patient_error_dict)
+    fp_causes = get_type_cause_totals(ErrorType.FALSE_POSITIVE, patient_error_dict)
+    fn_causes = get_type_cause_totals(ErrorType.FALSE_NEGATIVE, patient_error_dict)
+
+
+def write_instances_and_summaries(
+    docker_tsv: str, error_json: str, output_dir: str, eval_mode: str
+) -> None:
+    docker_df = pd.read_csv(docker_tsv, delimiter="\t")
+    patient_error_dict: Dict[str, Dict[ErrorType, Dict[ErrorCause, int]]] = {}
     with open(error_json, mode="rt") as json_f:
         patient_to_errors = json.load(json_f)
     for patient_id, error_dict in patient_to_errors.items():
         fp_events, fn_events = collect_error_events(
-            patient_id, eval_mode, error_dict, docker_df
+            patient_id, eval_mode, error_dict, cast(pd.DataFrame, docker_df)
         )
         write_patient_error_reports(patient_id, fp_events, fn_events, output_dir)
+        patient_error_dict[patient_id] = {
+            ErrorType.FALSE_NEGATIVE: get_error_cause_count(fn_events),
+            ErrorType.FALSE_POSITIVE: get_error_cause_count(fp_events),
+        }
+    write_summaries(patient_error_dict)
 
 
 def main():
@@ -280,7 +331,9 @@ def main():
         eval_mode = "strict"
     else:
         eval_mode = args.relaxed_to
-    write_instances(args.docker_tsv, args.error_json, args.output_dir, eval_mode)
+    write_instances_and_summaries(
+        args.docker_tsv, args.error_json, args.output_dir, eval_mode
+    )
 
 
 if __name__ == "__main__":
