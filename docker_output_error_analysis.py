@@ -1,11 +1,9 @@
 import argparse
 import json
-import operator
 from collections import Counter
 from datetime import datetime
 from enum import Enum
 from functools import reduce
-from itertools import chain
 from typing import Dict, List, Tuple, cast
 
 import dateutil.parser
@@ -241,7 +239,7 @@ def collect_fn_events(
     return [fn_instance(event) for event in false_negatives]
 
 
-def get_error_cause_count(events: List[ErrorDebug]) -> Dict[ErrorCause, int]:
+def get_error_cause_count(events: List[ErrorDebug]) -> Counter[ErrorCause]:
     return Counter(map(ErrorDebug.get_error_cause, events))
 
 
@@ -270,47 +268,72 @@ def write_patient_error_reports(
 
 def get_type_raw_total(
     error_type: ErrorType,
-    patient_error_dict: Dict[str, Dict[ErrorType, Dict[ErrorCause, int]]],
+    patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]],
 ) -> int:
-    return sum(
-        chain.from_iterable(v[error_type].values() for v in patient_error_dict.values())
-    )
+    return sum(v[error_type].total() for v in patient_error_dict.values())
 
 
 def get_type_cause_totals(
     error_type: ErrorType,
-    patient_error_dict: Dict[str, Dict[ErrorType, Dict[ErrorCause, int]]],
-) -> Dict[ErrorCause, int]:
+    patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]],
+) -> Counter[ErrorCause]:
     return cast(
-        Dict[ErrorCause, int],
+        Counter,
         reduce(
             Counter.__add__,
-            (Counter(v[error_type]) for v in patient_error_dict.values()),
+            (v[error_type] for v in patient_error_dict.values()),
         ),
     )
 
 
-def get_cause_raw_total(
+def patients_by_type(
+    error_type: ErrorType,
+    patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]],
+) -> Counter[str]:
+    return Counter({k: v[error_type].total() for k, v in patient_error_dict.items()})
+
+
+def patients_by_cause(
     error_cause: ErrorCause,
-    patient_error_dict: Dict[str, Dict[ErrorType, Dict[ErrorCause, int]]],
-) -> int:
-    return -1
+    patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]],
+) -> Counter[str]:
+    def cause_total(type_dict: Dict[ErrorType, Counter[ErrorCause]]) -> int:
+        total_counter = cast(
+            Counter,
+            reduce(Counter.__add__, type_dict.values()),
+        )
+        return total_counter[error_cause]
+
+    return Counter({k: cause_total(v) for k, v in patient_error_dict.items()})
 
 
 def write_summaries(
-    patient_error_dict: Dict[str, Dict[ErrorType, Dict[ErrorCause, int]]]
+    patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]]
 ) -> None:
     fp_total: int = get_type_raw_total(ErrorType.FALSE_POSITIVE, patient_error_dict)
     fn_total: int = get_type_raw_total(ErrorType.FALSE_NEGATIVE, patient_error_dict)
-    fp_causes = get_type_cause_totals(ErrorType.FALSE_POSITIVE, patient_error_dict)
-    fn_causes = get_type_cause_totals(ErrorType.FALSE_NEGATIVE, patient_error_dict)
+    fp_causes: Counter[ErrorCause] = get_type_cause_totals(
+        ErrorType.FALSE_POSITIVE, patient_error_dict
+    )
+    fn_causes: Counter[ErrorCause] = get_type_cause_totals(
+        ErrorType.FALSE_NEGATIVE, patient_error_dict
+    )
+    total_causes: Counter[ErrorCause] = fp_causes + fn_causes
+    cause_to_patient_count: Dict[ErrorCause, Counter[str]] = {
+        error_cause: patients_by_cause(error_cause, patient_error_dict)
+        for error_cause in ErrorCause
+    }
+    type_to_patient_count: Dict[ErrorType, Counter[str]] = {
+        error_type: patients_by_type(error_type, patient_error_dict)
+        for error_type in ErrorType
+    }
 
 
 def write_instances_and_summaries(
     docker_tsv: str, error_json: str, output_dir: str, eval_mode: str
 ) -> None:
     docker_df = pd.read_csv(docker_tsv, delimiter="\t")
-    patient_error_dict: Dict[str, Dict[ErrorType, Dict[ErrorCause, int]]] = {}
+    patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]] = {}
     with open(error_json, mode="rt") as json_f:
         patient_to_errors = json.load(json_f)
     for patient_id, error_dict in patient_to_errors.items():
