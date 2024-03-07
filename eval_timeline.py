@@ -4,7 +4,7 @@ import logging
 import os
 from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple, Union, cast
 
 import dateutil.parser
 
@@ -56,14 +56,28 @@ parser.add_argument(
     "or 'day' to evaluate year-month-day",
     choices=["day", "month", "year"],
 )
+# ideally will standardize this to the tuple case
+TimelineTuple = Union[Tuple[str, str, str], List[str]]
+TimelineTuples = List[TimelineTuple]
+# from "sensitivity and specificity"
+# https://en.wikipedia.org/wiki/Sensitivity_and_specificity
+SSMatrix = Tuple[Dict[str, int], Dict[str, int], Dict[str, int]]
+MetricMatrix = Tuple[Dict[str, float], Dict[str, float], Dict[str, float]]
+DebugDict = Dict[str, Dict[str, TimelineTuples]]
 
 
 class Chemo:
-    def __init__(self, text, first_start=None, last_end=None, cui=None) -> None:
-        self.text = text
-        self.first_start = first_start
-        self.last_end = last_end
-        self.cui = cui
+    def __init__(
+        self,
+        text: str,
+        first_start: Optional[datetime] = None,
+        last_end: Optional[datetime] = None,
+        cui: Optional[str] = None,
+    ) -> None:
+        self.text: str = text
+        self.first_start: Optional[datetime] = first_start
+        self.last_end: Optional[datetime] = last_end
+        self.cui: Optional[str] = cui
 
     def __str__(self) -> str:
         return "\t".join(
@@ -80,11 +94,11 @@ def read_all_patients(data_path: str) -> TimelineDict:
 
 
 def relaxed_rel_eval(
-    incorrect: List[List[str]],
-    missing: List[List[str]],
-    preds: List[List[str]],
-    golds: List[List[str]],
-) -> Tuple[List[List[str]], List[List[str]]]:
+    incorrect: List[TimelineTuple],
+    missing: List[TimelineTuple],
+    preds: List[TimelineTuple],
+    golds: List[TimelineTuple],
+) -> Tuple[List[TimelineTuple], List[TimelineTuple]]:
     not_truly_incorrect = []
     not_truly_missing = []
     for ptup in incorrect:
@@ -125,7 +139,12 @@ def relaxed_rel_eval(
     return not_truly_incorrect, not_truly_missing
 
 
-def relaxed_within_range_eval(incorrect, missing, gold_chemos, pred_chemos):
+def relaxed_within_range_eval(
+    incorrect: List[TimelineTuple],
+    missing: List[TimelineTuple],
+    gold_chemos,
+    pred_chemos,
+) -> Tuple[List[TimelineTuple], List[TimelineTuple]]:
     """
     incorrect: false positive,
     missing: false negative,
@@ -135,13 +154,13 @@ def relaxed_within_range_eval(incorrect, missing, gold_chemos, pred_chemos):
     not_truly_missing = []
     for ptup in incorrect:
         is_not_truly_incorrect = False
-        source, rel, target = ptup
+        source, rel, raw_target = ptup
 
-        target = target.replace("w", "W")
-        if "W" in target:
-            target = datetime.strptime(target + "-1", "%Y-W%W-%w")
+        raw_target = raw_target.replace("w", "W")
+        if "W" in raw_target:
+            target = datetime.strptime(raw_target + "-1", "%Y-W%W-%w")
         else:
-            target = dateutil.parser.parse(target)
+            target = dateutil.parser.parse(raw_target)
 
         if source in gold_chemos:
             gold_start, gold_end = (
@@ -167,13 +186,13 @@ def relaxed_within_range_eval(incorrect, missing, gold_chemos, pred_chemos):
 
     for gtup in missing:
         is_not_truly_missing = False
-        source, rel, target = gtup
+        source, rel, raw_target = gtup
 
-        target = target.replace("w", "W")
-        if "W" in target:
-            target = datetime.strptime(target + "-1", "%Y-W%W-%w")
+        raw_target = raw_target.replace("w", "W")
+        if "W" in raw_target:
+            target = datetime.strptime(raw_target + "-1", "%Y-W%W-%w")
         else:
-            target = dateutil.parser.parse(target)
+            target = dateutil.parser.parse(raw_target)
 
         if source in pred_chemos:
             pred_start, pred_end = (
@@ -199,17 +218,19 @@ def relaxed_within_range_eval(incorrect, missing, gold_chemos, pred_chemos):
     return not_truly_incorrect, not_truly_missing
 
 
-def group_chemo_dates(golds):
-    gold_group_by_start_end = defaultdict(lambda: defaultdict(list))
+def group_chemo_dates(golds: List[TimelineTuple]) -> Dict[str, Chemo]:
+    gold_group_by_start_end: Dict[str, Dict[str, List[datetime]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
     for tup in golds:
-        source, label, target = tup
+        source, label, raw_target = tup
         if label.upper() not in ["BEGINS-ON", "ENDS-ON"]:
             continue
-        target = target.replace("w", "W")
-        if "-W" in target:
-            target = datetime.strptime(target + "-1", "%Y-W%W-%w")
+        raw_target = raw_target.replace("w", "W")
+        if "-W" in raw_target:
+            target = datetime.strptime(raw_target + "-1", "%Y-W%W-%w")
         else:
-            target = dateutil.parser.parse(target)
+            target = dateutil.parser.parse(raw_target)
 
         gold_group_by_start_end[source][label].append(target)
     all_gold_chemos = {}
@@ -228,16 +249,18 @@ def group_chemo_dates(golds):
     return all_gold_chemos
 
 
-def normalize_to_month_and_year(golds):
+def normalize_to_month_and_year(
+    golds: List[TimelineTuple],
+) -> Tuple[List[TimelineTuple], List[TimelineTuple]]:
     month_only_pairs = []
     year_only_pairs = []
     for tup in golds:
-        source, label, target = tup
-        target = target.replace("w", "W")
-        if "W" in target:
-            target = datetime.strptime(target + "-1", "%Y-W%W-%w")
+        source, label, raw_target = tup
+        raw_target = raw_target.replace("w", "W")
+        if "W" in raw_target:
+            target = datetime.strptime(raw_target + "-1", "%Y-W%W-%w")
         else:
-            target = dateutil.parser.parse(target)
+            target = dateutil.parser.parse(raw_target)
         year = target.year
         month = target.month
         if month < 10:
@@ -254,18 +277,24 @@ def normalize_to_month_and_year(golds):
         if year_pair not in year_only_pairs:
             year_only_pairs.append(year_pair)
 
-    has_more_specific_chemos_month = summarize_timeline(month_only_pairs)
-    has_more_specific_chemos_year = summarize_timeline(year_only_pairs)
+    has_more_specific_chemos_month = summarize_timeline(
+        cast(List[TimelineTuple], month_only_pairs)
+    )
+    has_more_specific_chemos_year = summarize_timeline(
+        cast(List[TimelineTuple], year_only_pairs)
+    )
     month_only_pairs = [
         tup for tup in month_only_pairs if tup not in has_more_specific_chemos_month
     ]
     year_only_pairs = [
         tup for tup in year_only_pairs if tup not in has_more_specific_chemos_year
     ]
-    return month_only_pairs, year_only_pairs
+    return cast(List[TimelineTuple], month_only_pairs), cast(
+        List[TimelineTuple], year_only_pairs
+    )
 
 
-def summarize_timeline(timelines):
+def summarize_timeline(timelines: List[TimelineTuple]) -> List[TimelineTuple]:
     """
     This is to postprocess timelines one more time after we normalized original timeline
     to year only or month only timelines. What it does is: if we have a generic chemo mention,
@@ -274,7 +303,9 @@ def summarize_timeline(timelines):
     e.g. <Taxol, contains-1, 2011-01>. If we find a more specific chemo mention,
     we would ignore the generic chemo mention, only add <Taxol, contains-1, 2011-01> to the timeline.
     """
-    date_rel_to_chemo = defaultdict(lambda: defaultdict(list))
+    date_rel_to_chemo: Dict[str, Dict[str, List[str]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
     for tup in timelines:
         chemo, rel, date = tup
         date_rel_to_chemo[date][rel].append(chemo)
@@ -286,7 +317,9 @@ def summarize_timeline(timelines):
                 # chemo.startswith("chemo") is how we check if this is a generic chemo mention
                 if chemo.startswith("chemo"):
                     if len(date_rel_to_chemo[date][rel]) > 1:
-                        has_more_specific_chemos.append([chemo, rel, date])
+                        has_more_specific_chemos.append(
+                            cast(TimelineTuple, [chemo, rel, date])
+                        )
     return has_more_specific_chemos
 
 
@@ -365,7 +398,9 @@ def relaxed_eval(gold, gold_chemo, pred, pred_chemo):
     )
 
 
-def evaluation(gold, pred, args):
+def evaluation(
+    gold: List[TimelineTuple], pred: List[TimelineTuple], args: argparse.Namespace
+):
     # Get the earliest start and latest end dates for each chemo
     all_gold_chemos = group_chemo_dates(gold)
     all_pred_chemos = group_chemo_dates(pred)
@@ -450,16 +485,16 @@ def evaluation(gold, pred, args):
         logger.debug(f"{rmv_from_fn_label}")
 
     if len(true_pos) + len(false_neg) == 0:
-        precision, recall, f1 = 0, 0, 0
+        precision, recall, f1 = 0.0, 0.0, 0.0
     elif len(true_pos) + len(false_pos) == 0:
-        precision, recall, f1 = 0, 0, 0
+        precision, recall, f1 = 0.0, 0.0, 0.0
     else:
         precision = len(true_pos) / (len(true_pos) + len(false_pos))
         recall = len(true_pos) / (len(true_pos) + len(false_neg))
         if precision + recall:
             f1 = 2 * (precision * recall) / (precision + recall)
         else:
-            f1 = 0
+            f1 = 0.0
 
     logger.info(f"precision: {precision}")
     logger.info(f"recall: {recall}")
@@ -595,17 +630,12 @@ def macro_average_metrics(
     return type_a_macro_f1, type_b_macro_f1
 
 
-def driver(args: argparse.Namespace) -> None:
-    logger.info(args)
-
-    print(f"Evaluation code for ChemoTimelines Shared Task. Version: {VERSION}")
-    print(f"Reading from files...")
-    pred_all_patient, gold_all_patient, all_ids, gold_ids = read_files(args=args)
-    print(
-        f"predicted output: {len(pred_all_patient)}, gold annotation: {len(gold_all_patient)}, all ids: {len(all_ids)}"
-    )
-    print()
-
+def core_loop(
+    pred_all_patient: TimelineDict,
+    gold_all_patient: TimelineDict,
+    gold_ids: List[str],
+    args: argparse.Namespace,
+) -> Tuple[SSMatrix, MetricMatrix, DebugDict, Dict[str, int]]:
     all_true_pos, all_false_pos, all_false_neg = {}, {}, {}
     local_relations = {}  # Key = patient ID, Value = number of timeline in the patient
     local_f1, local_precision, local_recall = (
@@ -613,11 +643,9 @@ def driver(args: argparse.Namespace) -> None:
         {},
         {},
     )  # Key = patient ID, Value = score for the patient
-
-    fn_fp_debug: Dict[str, TimelineDict] = defaultdict(
+    fn_fp_debug: DebugDict = defaultdict(
         lambda: defaultdict(list)
     )  # patient_id -> <FP | FN> -> List[<chemo, timex, rel>]
-
     for pred_patient, pred_timeline in pred_all_patient.items():
         # pred_patient: patient ID; pred_timeline: a list of <chemo, label, timex>
         if pred_patient not in gold_ids:
@@ -637,19 +665,26 @@ def driver(args: argparse.Namespace) -> None:
             1.0, 1.0, and 1.0 for the given patient in local precision, recall, and F1, respectively.
         """
         if len(gold_timeline) == 0:
+            true_pos: List[TimelineTuple] = []
+            false_pos: List[TimelineTuple] = []
+            false_neg: List[TimelineTuple] = []
             if len(pred_timeline) == 0:
-                true_pos, false_pos, false_neg = [], [], []
+                true_pos = []
+                false_pos = []
+                false_neg = []
                 p, r, f_score = 1, 1, 1
             else:
                 true_pos = []
-                false_pos = pred_timeline
+                false_pos = cast(List[TimelineTuple], pred_timeline)
                 false_neg = []
                 p, r, f_score = 0, 0, 0
             local_relations[pred_patient] = 0
         else:
             logger.info(f"pred_patient ID: {pred_patient}")
             true_pos, false_pos, false_neg, p, r, f_score = evaluation(
-                gold=gold_timeline, pred=pred_timeline, args=args
+                gold=cast(List[TimelineTuple], gold_timeline),
+                pred=cast(List[TimelineTuple], pred_timeline),
+                args=args,
             )
             local_relations[pred_patient] = len(gold_timeline)
 
@@ -662,7 +697,29 @@ def driver(args: argparse.Namespace) -> None:
         local_precision[pred_patient] = float(p)
         local_recall[pred_patient] = float(r)
         local_f1[pred_patient] = float(f_score)
+    ss_matrix = all_true_pos, all_false_pos, all_false_neg
+    metric_matrix = local_f1, local_precision, local_recall
+    return ss_matrix, metric_matrix, fn_fp_debug, local_relations
 
+
+def driver(args: argparse.Namespace) -> None:
+    logger.info(args)
+
+    print(f"Evaluation code for ChemoTimelines Shared Task. Version: {VERSION}")
+    print(f"Reading from files...")
+    pred_all_patient, gold_all_patient, all_ids, gold_ids = read_files(args=args)
+    print(
+        f"predicted output: {len(pred_all_patient)}, gold annotation: {len(gold_all_patient)}, all ids: {len(all_ids)}"
+    )
+    print()
+    ss_matrix, metrics_matrix, fn_fp_debug, local_relations = core_loop(
+        pred_all_patient=pred_all_patient,
+        gold_all_patient=gold_all_patient,
+        gold_ids=gold_ids,
+        args=args,
+    )
+    all_true_pos, all_false_pos, all_false_neg = ss_matrix
+    local_f1, local_precision, local_recall = metrics_matrix
     _ = micro_average_metrics(
         all_true_pos=all_true_pos,
         all_false_pos=all_false_pos,
