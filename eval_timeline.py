@@ -4,7 +4,7 @@ import logging
 import os
 from collections import defaultdict
 from datetime import datetime
-from typing import Dict, Iterable, List, Optional, Tuple, Union, cast
+from typing import Dict, List, Optional, Tuple, Union, cast
 
 import dateutil.parser
 
@@ -85,6 +85,13 @@ class Chemo:
         )
 
 
+def datetime_normalize(time: str) -> datetime:
+    time = time.replace("w", "W")
+    if "W" in time:
+        return datetime.strptime(time + "-1", "%Y-W%W-%w")
+    return dateutil.parser.parse(time)
+
+
 def read_all_patients(data_path: str) -> TimelineDict:
     # Note that all key/value pairs of JSON are always of the type str.
     # https://docs.python.org/3/library/json.html
@@ -156,11 +163,7 @@ def relaxed_within_range_eval(
         is_not_truly_incorrect = False
         source, rel, raw_target = ptup
 
-        raw_target = raw_target.replace("w", "W")
-        if "W" in raw_target:
-            target = datetime.strptime(raw_target + "-1", "%Y-W%W-%w")
-        else:
-            target = dateutil.parser.parse(raw_target)
+        target = datetime_normalize(raw_target)
 
         if source in gold_chemos:
             gold_start, gold_end = (
@@ -188,11 +191,7 @@ def relaxed_within_range_eval(
         is_not_truly_missing = False
         source, rel, raw_target = gtup
 
-        raw_target = raw_target.replace("w", "W")
-        if "W" in raw_target:
-            target = datetime.strptime(raw_target + "-1", "%Y-W%W-%w")
-        else:
-            target = dateutil.parser.parse(raw_target)
+        target = datetime_normalize(raw_target)
 
         if source in pred_chemos:
             pred_start, pred_end = (
@@ -226,11 +225,7 @@ def group_chemo_dates(golds: List[TimelineTuple]) -> Dict[str, Chemo]:
         source, label, raw_target = tup
         if label.upper() not in ["BEGINS-ON", "ENDS-ON"]:
             continue
-        raw_target = raw_target.replace("w", "W")
-        if "-W" in raw_target:
-            target = datetime.strptime(raw_target + "-1", "%Y-W%W-%w")
-        else:
-            target = dateutil.parser.parse(raw_target)
+        target = datetime_normalize(raw_target)
 
         gold_group_by_start_end[source][label].append(target)
     all_gold_chemos = {}
@@ -256,11 +251,7 @@ def normalize_to_month_and_year(
     year_only_pairs = []
     for tup in golds:
         source, label, raw_target = tup
-        raw_target = raw_target.replace("w", "W")
-        if "W" in raw_target:
-            target = datetime.strptime(raw_target + "-1", "%Y-W%W-%w")
-        else:
-            target = dateutil.parser.parse(raw_target)
+        target = datetime_normalize(raw_target)
         year = target.year
         month = target.month
         if month < 10:
@@ -706,7 +697,7 @@ def driver(args: argparse.Namespace) -> None:
     logger.info(args)
 
     print(f"Evaluation code for ChemoTimelines Shared Task. Version: {VERSION}")
-    print(f"Reading from files...")
+    print("Reading from files...")
     pred_all_patient, gold_all_patient, all_ids, gold_ids = read_files(args=args)
     print(
         f"predicted output: {len(pred_all_patient)}, gold annotation: {len(gold_all_patient)}, all ids: {len(all_ids)}"
