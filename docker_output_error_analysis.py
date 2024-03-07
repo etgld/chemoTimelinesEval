@@ -4,7 +4,7 @@ from collections import Counter
 from datetime import datetime
 from enum import Enum
 from functools import reduce
-from typing import Dict, List, Tuple, Optional, cast
+from typing import Dict, List, Tuple, cast
 
 import dateutil.parser
 import pandas as pd

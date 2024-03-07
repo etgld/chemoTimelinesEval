@@ -4,8 +4,11 @@ import logging
 import os
 from collections import defaultdict
 from datetime import datetime
+from typing import Dict, List, Tuple
 
 import dateutil.parser
+
+from docker_output_to_timeline import TimelineDict
 
 VERSION = "v20240305"
 
@@ -56,19 +59,19 @@ parser.add_argument(
 
 
 class Chemo:
-    def __init__(self, text, first_start=None, last_end=None, cui=None):
+    def __init__(self, text, first_start=None, last_end=None, cui=None) -> None:
         self.text = text
         self.first_start = first_start
         self.last_end = last_end
         self.cui = cui
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "\t".join(
             [self.text if self.text else "Null", self.cui if self.cui else "Null"]
         )
 
 
-def read_all_patients(data_path: str):
+def read_all_patients(data_path: str) -> TimelineDict:
     # Note that all key/value pairs of JSON are always of the type str.
     # https://docs.python.org/3/library/json.html
     with open(data_path, "r") as fr:
@@ -76,7 +79,12 @@ def read_all_patients(data_path: str):
     return all_patient_timelines
 
 
-def relaxed_rel_eval(incorrect, missing, preds, golds):
+def relaxed_rel_eval(
+    incorrect: List[List[str]],
+    missing: List[List[str]],
+    preds: List[List[str]],
+    golds: List[List[str]],
+) -> Tuple[List[List[str]], List[List[str]]]:
     not_truly_incorrect = []
     not_truly_missing = []
     for ptup in incorrect:
@@ -365,6 +373,10 @@ def evaluation(gold, pred, args):
     gold_month_timeline, gold_year_timeline = normalize_to_month_and_year(gold)
     pred_month_timeline, pred_year_timeline = normalize_to_month_and_year(pred)
 
+    rmv_from_fp_range = {}
+    rmv_from_fn_range = {}
+    rmv_from_fp_label = {}
+    rmv_from_fn_label = {}
     if args.strict:
         true_pos, false_pos, false_neg = strict_eval(gold, pred)
     else:
@@ -456,7 +468,9 @@ def evaluation(gold, pred, args):
     return true_pos, false_pos, false_neg, precision, recall, f1
 
 
-def read_files(args):
+def read_files(
+    args: argparse.Namespace,
+) -> Tuple[TimelineDict, TimelineDict, List[str], List[str]]:
     gold_all_patient = read_all_patients(args.gold_path)
     pred_all_patient = read_all_patients(args.pred_path)
 
@@ -495,9 +509,9 @@ def read_files(args):
 
 
 def micro_average_metrics(
-    all_true_pos: dict,
-    all_false_pos: dict,
-    all_false_neg: dict,
+    all_true_pos: Dict[str, int],
+    all_false_pos: Dict[str, int],
+    all_false_neg: Dict[str, int],
 ) -> float:
     # Micro average metrics
     logger.info(
@@ -532,10 +546,11 @@ def micro_average_metrics(
 
 
 def macro_average_metrics(
-    local_precision: dict,
-    local_recall: dict,
-    local_f1: dict,
-) -> tuple:
+    local_precision: Dict[str, float],
+    local_recall: Dict[str, float],
+    local_f1: Dict[str, float],
+    local_relations: Dict[str, int],
+) -> Tuple[float, float]:
     # Macro average metrics
     print("Macro average metrics")
 
@@ -580,9 +595,7 @@ def macro_average_metrics(
     return type_a_macro_f1, type_b_macro_f1
 
 
-if __name__ == "__main__":
-    args = parser.parse_args()
-
+def driver(args: argparse.Namespace) -> None:
     logger.info(args)
 
     print(f"Evaluation code for ChemoTimelines Shared Task. Version: {VERSION}")
@@ -601,7 +614,7 @@ if __name__ == "__main__":
         {},
     )  # Key = patient ID, Value = score for the patient
 
-    fn_fp_debug = defaultdict(
+    fn_fp_debug: Dict[str, TimelineDict] = defaultdict(
         lambda: defaultdict(list)
     )  # patient_id -> <FP | FN> -> List[<chemo, timex, rel>]
 
@@ -646,9 +659,9 @@ if __name__ == "__main__":
         if args.debug:
             fn_fp_debug[pred_patient]["false_positive"].extend(false_pos)
             fn_fp_debug[pred_patient]["false_negative"].extend(false_neg)
-        local_precision[pred_patient] = p
-        local_recall[pred_patient] = r
-        local_f1[pred_patient] = f_score
+        local_precision[pred_patient] = float(p)
+        local_recall[pred_patient] = float(r)
+        local_f1[pred_patient] = float(f_score)
 
     _ = micro_average_metrics(
         all_true_pos=all_true_pos,
@@ -672,6 +685,7 @@ if __name__ == "__main__":
         local_precision=local_precision,
         local_recall=local_recall,
         local_f1=local_f1,
+        local_relations=local_relations,
     )
 
     print(
@@ -686,3 +700,12 @@ if __name__ == "__main__":
         )
 
     print("Evaluation completed!")
+
+
+def main() -> None:
+    args = parser.parse_args()
+    driver(args)
+
+
+if __name__ == "__main__":
+    main()
