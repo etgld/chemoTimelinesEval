@@ -151,19 +151,19 @@ def preimage_and_cause(
     eval_mode: str,
     patient_df: pd.DataFrame,
 ) -> Tuple[List[instance], ErrorCause]:
-    def row_chemo_compatible(row_chemo: str) -> bool:
+    def row_chemo_compatible(pandas_row: pd.Series) -> bool:
+        row_chemo = cast(str, pandas_row.chemo_text)
         return compatible_chemos(row_chemo, chemo_text)
 
-    chemo_matches = patient_df.loc[patient_df["chemo_text"].apply(row_chemo_compatible)]
+    chemo_matches = patient_df.loc[patient_df.apply(row_chemo_compatible)]
     if len(chemo_matches) == 0:
         return [], ErrorCause.CHEMO
 
-    def row_timex_compatible(row_timex: str) -> bool:
+    def row_timex_compatible(pandas_row: pd.Series) -> bool:
+        row_timex = cast(str, pandas_row.normed_timex)
         return compatible_time(row_timex, normed_timex, eval_mode)
 
-    timex_chemo_matches = chemo_matches.loc[
-        chemo_matches["normed_timex"].apply(row_timex_compatible)
-    ]
+    timex_chemo_matches = chemo_matches.loc[chemo_matches.apply(row_timex_compatible)]
 
     if len(timex_chemo_matches) == 0:
         return [], ErrorCause.TIMEX
@@ -176,11 +176,12 @@ def preimage_and_cause(
             ErrorCause.TLINK,
         )
 
-    def row_tlink_compatible(row_tlink: str) -> bool:
+    def row_tlink_compatible(pandas_row: pd.Series) -> bool:
+        row_tlink = cast(str, pandas_row.tlink)
         return row_tlink.lower() == tlink.lower()
 
     full_matches = timex_chemo_matches.loc[
-        timex_chemo_matches["tlink"].apply(row_tlink_compatible)
+        timex_chemo_matches.apply(row_tlink_compatible)
     ]
     return (
         full_matches[
