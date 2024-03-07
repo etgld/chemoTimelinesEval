@@ -1,13 +1,14 @@
 """
 Convert predictions of run_glue.py to event-timex pairs and summarize to timelines.
 """
-import re
 import argparse
-import os
+from ctypes import Union
 import json
-from typing import List, Set, Tuple
-import pandas as pd
+import os
 from collections import defaultdict
+from typing import Dict, Iterable, List, Optional, Set, Tuple, cast
+
+import pandas as pd
 
 parser = argparse.ArgumentParser(description="")
 
@@ -45,18 +46,24 @@ label_to_hierarchy = {
 }
 
 NORMALIZED_TIMEXES_TO_SKIP = {"Luz 5", "P2000D"}
+TimelineDict = Dict[str, List[List[str]]]
+TimelineTuples = List[Tuple[str, str, str, str, str]]
 
 
-def rank_labels(labels):
-    label_rankings = {lbl: label_to_hierarchy[lbl] for lbl in labels}
-    label_rankings = sorted(label_rankings.items(), key=lambda x: x[1])
+def rank_labels(labels: Iterable[str]) -> str:
+    label_rankings = [(label, label_to_hierarchy[label]) for label in labels]
+    label_rankings = sorted(label_rankings, key=lambda x: x[1])
     return label_rankings[0][0]
 
 
-def deduplicate(timelines):
-    merged_rows = defaultdict(lambda: defaultdict(set))
-    chemo_date_map = defaultdict(lambda: defaultdict(list))
-    for row in timelines:
+def deduplicate(timeline_tuples: TimelineTuples) -> TimelineDict:
+    merged_rows: Dict[str, Dict[Tuple[str, str], Set[str]]] = defaultdict(
+        lambda: defaultdict(set)
+    )
+    chemo_date_map: Dict[str, Dict[Tuple[str, str], List[str]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    for row in timeline_tuples:
         source_id, source_text, rel, target_id, target_text = row
         source_text = source_text.lower()
         target_text = target_text.lower()
@@ -95,7 +102,7 @@ def deduplicate(timelines):
     return deduplicated
 
 
-def conflict_resolution(timelines):
+def conflict_resolution(timelines: TimelineDict) -> TimelineDict:
     resolved_timelines = defaultdict(list)
     for patient, treatments in timelines.items():
         source_target_to_rel = defaultdict(list)
@@ -113,13 +120,13 @@ def conflict_resolution(timelines):
     return resolved_timelines
 
 
-def write_to_output(data, outfile_name):
-    with open(outfile_name, "w", encoding="utf-8") as fw:
+def write_to_output(data: TimelineDict, outfile_name: str) -> None:
+    with open(outfile_name, "wt", encoding="utf-8") as fw:
         json.dump(data, fw)
 
 
-def keep_normalized_timex(pandas_col) -> bool:
-    normalized_timex = pandas_col.normed_timex
+def keep_normalized_timex(pandas_row: pd.Series) -> bool:
+    normalized_timex = cast(str, pandas_row.normed_timex)
     return normalized_timex.split("-")[0].isnumeric()
 
 
@@ -137,27 +144,29 @@ def impute_relative_timexes(dataframe: pd.DataFrame) -> pd.DataFrame:
 # timeline_delegator.py in the Docker
 def convert_docker_output(
     docker_tsv_output_path: str, impute_relative: bool
-) -> Tuple[List[str], Set[str]]:
-    docker_output_dataframe = pd.read_csv(docker_tsv_output_path, sep="\t")
+) -> Tuple[TimelineTuples, Set[str]]:
+    docker_output_dataframe = cast(
+        pd.DataFrame, pd.read_csv(docker_tsv_output_path, delimiter="\t")
+    )
 
-    no_none_tlinks = docker_output_dataframe[
-        ~docker_output_dataframe["tlink"].isin(["none"])
+    no_none_tlinks = docker_output_dataframe.loc[
+        docker_output_dataframe["tlink"] != "none"
     ]
 
-    normed_timexes_with_tlinks = no_none_tlinks[
-        ~no_none_tlinks["normed_timex"].isin(["none"])
+    normed_timexes_with_tlinks = no_none_tlinks.loc[
+        no_none_tlinks["normed_timex"] != ["none"]
     ]
 
     if impute_relative:
         normed_timexes_with_tlinks = impute_relative_timexes(normed_timexes_with_tlinks)
 
-    acceptable_normed_timexes_with_tlinks = normed_timexes_with_tlinks[
-        normed_timexes_with_tlinks.apply(keep_normalized_timex, axis=1)
+    acceptable_normed_timexes_with_tlinks = normed_timexes_with_tlinks.loc[
+        normed_timexes_with_tlinks.apply(keep_normalized_timex)
     ]
 
-    no_discovery_pt_ids = set(docker_output_dataframe["patient_id"]) - set(
-        acceptable_normed_timexes_with_tlinks["patient_id"]
-    )
+    no_discovery_pt_ids = set(
+        cast(Iterable[str], docker_output_dataframe["patient_id"])
+    ) - set(cast(Iterable[str], acceptable_normed_timexes_with_tlinks["patient_id"]))
 
     timeline_tups = acceptable_normed_timexes_with_tlinks[
         [
@@ -172,11 +181,14 @@ def convert_docker_output(
     return timeline_tups, no_discovery_pt_ids
 
 
-def main():
-    args = parser.parse_args()
-
+def convert_resolve_write(
+    input_tsv: str,
+    cancer_type: str,
+    output_dir: Optional[str] = None,
+    impute_relative: bool = False,
+) -> Optional[TimelineDict]:
     timelines_tups, no_discovery_pt_ids = convert_docker_output(
-        args.input_tsv, args.impute_relative
+        input_tsv, impute_relative
     )
 
     timelines_deduplicated = deduplicate(timelines_tups)
@@ -186,18 +198,28 @@ def main():
     for patient_id in no_discovery_pt_ids:
         resolved_timelines[patient_id] = []
 
-    outfile_name = args.cancer_type + "_timelines"
+    outfile_name = cancer_type + "_timelines"
 
-    if args.impute_relative:
+    if impute_relative:
         outfile_name += "_impute_relative"
 
     outfile_name += ".json"
 
+    if output_dir is None:
+        return resolved_timelines
+
     write_to_output(
         resolved_timelines,
-        os.path.join(args.output_dir, outfile_name),
+        os.path.join(output_dir, outfile_name),
     )
     print(f"Wrote summarized outputs to {outfile_name}")
+    return None # so mypy doesn't compain about the Optional
+
+def main() -> None:
+    args = parser.parse_args()
+    convert_resolve_write(
+        args.input_tsv, args.output_dir, args.cancer_type, args.impute_relative
+    )
 
 
 if __name__ == "__main__":

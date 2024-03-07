@@ -4,7 +4,7 @@ from collections import Counter
 from datetime import datetime
 from enum import Enum
 from functools import reduce
-from typing import Dict, List, Tuple, cast
+from typing import Dict, List, Tuple, Optional, cast
 
 import dateutil.parser
 import pandas as pd
@@ -127,7 +127,6 @@ def compatible_time(time1: str, time2: str, eval_mode: str) -> bool:
         return False
 
 
-# Pandas has really dumb syntax
 def compatible_chemos(chemo1: str, chemo2: str):
     return chemo1.lower() == chemo2.lower()
 
