@@ -2,10 +2,10 @@
 Convert predictions of run_glue.py to event-timex pairs and summarize to timelines.
 """
 import argparse
-from ctypes import Union
 import json
 import os
 from collections import defaultdict
+from ctypes import Union
 from typing import Dict, Iterable, List, Optional, Set, Tuple, cast
 
 import pandas as pd

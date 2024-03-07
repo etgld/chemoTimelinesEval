@@ -324,7 +324,7 @@ def write_patient_error_reports(
         if len(fn_events) > 0
         else ""
     )
-    with open(fn, "wt") as fn_out:
+    with open(fn, mode="wt") as fn_out:
         fn_out.write(fp_str)
         fn_out.write(fn_str)
 

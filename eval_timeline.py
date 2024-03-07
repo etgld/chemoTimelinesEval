@@ -49,11 +49,14 @@ parser.add_argument(
     help="(Only for test evaluation) Path to file with list of gold annotated ids, delimited by new line characters",
 )
 
-parser.add_argument("--strict", action="store_true", help="do strict eval")
+parser.add_argument(
+    "--strict", action="store_true", help="do strict eval", type=bool, default=False
+)
 parser.add_argument(
     "--relaxed_to",
     help="Type 'year' to only evaluate year, 'month' to evaluate year and month, "
     "or 'day' to evaluate year-month-day",
+    type=str,
     choices=["day", "month", "year"],
 )
 # ideally will standardize this to the tuple case
@@ -106,8 +109,8 @@ def relaxed_rel_eval(
     preds: List[TimelineTuple],
     golds: List[TimelineTuple],
 ) -> Tuple[List[TimelineTuple], List[TimelineTuple]]:
-    not_truly_incorrect = []
-    not_truly_missing = []
+    not_truly_incorrect: List[TimelineTuple] = []
+    not_truly_missing: List[TimelineTuple] = []
     for ptup in incorrect:
         is_not_truly_incorrect = False
         chemo, rel, timex = ptup
@@ -142,7 +145,6 @@ def relaxed_rel_eval(
                 is_not_truly_missing = True
         if is_not_truly_missing:
             not_truly_missing.append(gtup)
-    # print(len(not_truly_incorrect), len(not_truly_missing))
     return not_truly_incorrect, not_truly_missing
 
 
@@ -321,7 +323,9 @@ def compute_f(true_pos, false_pos, false_neg):
     return f1
 
 
-def strict_eval(gold, pred):
+def strict_eval(
+    gold: List[TimelineTuple], pred: List[TimelineTuple]
+) -> Tuple[List[TimelineTuple], List[TimelineTuple], List[TimelineTuple]]:
     true_pos = [prediction for prediction in pred if prediction in gold]
     false_pos = [prediction for prediction in pred if prediction not in gold]
     false_neg = [correct for correct in gold if correct not in pred]
@@ -348,7 +352,20 @@ def fp_fn_single_count(false_pos, false_neg):
     return not_truly_fp
 
 
-def relaxed_eval(gold, gold_chemo, pred, pred_chemo):
+def relaxed_eval(
+    gold: List[TimelineTuple],
+    gold_chemo: Dict[str, Chemo],
+    pred: List[TimelineTuple],
+    pred_chemo: Dict[str, Chemo],
+) -> Tuple[
+    List[TimelineTuple],
+    List[TimelineTuple],
+    List[TimelineTuple],
+    List[TimelineTuple],
+    List[TimelineTuple],
+    List[TimelineTuple],
+    List[TimelineTuple],
+]:
     true_pos = [prediction for prediction in pred if prediction in gold]
     false_pos = [prediction for prediction in pred if prediction not in gold]
     false_neg = [correct for correct in gold if correct not in pred]
@@ -390,7 +407,7 @@ def relaxed_eval(gold, gold_chemo, pred, pred_chemo):
 
 
 def evaluation(
-    gold: List[TimelineTuple], pred: List[TimelineTuple], args: argparse.Namespace
+    gold: List[TimelineTuple], pred: List[TimelineTuple], strict: bool, relaxed_to: str
 ):
     # Get the earliest start and latest end dates for each chemo
     all_gold_chemos = group_chemo_dates(gold)
@@ -399,17 +416,15 @@ def evaluation(
     gold_month_timeline, gold_year_timeline = normalize_to_month_and_year(gold)
     pred_month_timeline, pred_year_timeline = normalize_to_month_and_year(pred)
 
-    rmv_from_fp_range = {}
-    rmv_from_fn_range = {}
-    rmv_from_fp_label = {}
-    rmv_from_fn_label = {}
-    if args.strict:
+    rmv_from_fp_range: List[TimelineTuple] = []
+    rmv_from_fn_range: List[TimelineTuple] = []
+    rmv_from_fp_label: List[TimelineTuple] = []
+    rmv_from_fn_label: List[TimelineTuple] = []
+    if strict:
         true_pos, false_pos, false_neg = strict_eval(gold, pred)
     else:
-        assert (
-            args.relaxed_to
-        ), "For relaxed evaluation, please specify --relaxed_to flag"
-        if args.relaxed_to == "day":
+        assert relaxed_to, "For relaxed evaluation, please specify --relaxed_to flag"
+        if relaxed_to == "day":
             # rmv_from_fp_range: remove from false positive because it's in the right range;
             # rmv_from_fp_label: remove from false positive because the label is consider correct.
             (
@@ -421,7 +436,7 @@ def evaluation(
                 rmv_from_fp_label,
                 rmv_from_fn_label,
             ) = relaxed_eval(gold, all_gold_chemos, pred, all_pred_chemos)
-        elif args.relaxed_to == "month":
+        elif relaxed_to == "month":
             (
                 true_pos,
                 false_pos,
@@ -436,7 +451,7 @@ def evaluation(
                 pred_month_timeline,
                 all_pred_chemos,
             )
-        elif args.relaxed_to == "year":
+        elif relaxed_to == "year":
             (
                 true_pos,
                 false_pos,
@@ -464,7 +479,7 @@ def evaluation(
         logger.debug(f"{item}")
         pass
 
-    if not args.strict:
+    if not strict:
         logger.debug(f"removed from false_pos_range... {len(rmv_from_fp_range)}")
         logger.debug(f"{rmv_from_fp_range}")
         logger.debug(f"removed from false_pos_label... {len(rmv_from_fp_label)}")
@@ -495,18 +510,18 @@ def evaluation(
 
 
 def read_files(
-    args: argparse.Namespace,
+    gold_id_path: str, all_id_path: str, gold_path: str, pred_path: str
 ) -> Tuple[TimelineDict, TimelineDict, List[str], List[str]]:
-    gold_all_patient = read_all_patients(args.gold_path)
-    pred_all_patient = read_all_patients(args.pred_path)
+    gold_all_patient = read_all_patients(gold_path)
+    pred_all_patient = read_all_patients(pred_path)
 
-    with open(args.all_id_path) as fp:
+    with open(all_id_path, mode="rt") as fp:
         all_ids = [line.splitlines()[0] for line in fp.readlines()]
 
     # Sanity check
     if len(all_ids) == 0 or len(all_ids) != len(pred_all_patient):
         raise ValueError("Malformated or some patients are missing in prediction file.")
-    if not args.gold_id_path:
+    if not gold_id_path:
         if len(all_ids) != len(gold_all_patient):
             raise ValueError(
                 "Error in gold annotated ids file. Check the content of file in gold_id_path. Length of all_ids: %s, gold_all_patient: %s"
@@ -514,10 +529,10 @@ def read_files(
             )
 
     # Only for orgnizers: for test dataset - screening silver datasets
-    if args.gold_id_path:
-        if not os.path.exists(args.gold_id_path):
+    if gold_id_path:
+        if not os.path.exists(gold_id_path):
             raise ValueError("Error in gold annotated ids file path")
-        with open(args.gold_id_path) as fp:
+        with open(gold_id_path, mode="rt") as fp:
             gold_ids = [line.splitlines()[0] for line in fp.readlines()]
 
         if (
@@ -625,7 +640,9 @@ def core_loop(
     pred_all_patient: TimelineDict,
     gold_all_patient: TimelineDict,
     gold_ids: List[str],
-    args: argparse.Namespace,
+    strict: bool,
+    relaxed_to: str,
+    debug: bool,
 ) -> Tuple[SSMatrix, MetricMatrix, DebugDict, Dict[str, int]]:
     all_true_pos, all_false_pos, all_false_neg = {}, {}, {}
     local_relations = {}  # Key = patient ID, Value = number of timeline in the patient
@@ -675,14 +692,15 @@ def core_loop(
             true_pos, false_pos, false_neg, p, r, f_score = evaluation(
                 gold=cast(List[TimelineTuple], gold_timeline),
                 pred=cast(List[TimelineTuple], pred_timeline),
-                args=args,
+                strict=strict,
+                relaxed_to=relaxed_to,
             )
             local_relations[pred_patient] = len(gold_timeline)
 
         all_true_pos[pred_patient] = len(true_pos)
         all_false_pos[pred_patient] = len(false_pos)
         all_false_neg[pred_patient] = len(false_neg)
-        if args.debug:
+        if debug:
             fn_fp_debug[pred_patient]["false_positive"].extend(false_pos)
             fn_fp_debug[pred_patient]["false_negative"].extend(false_neg)
         local_precision[pred_patient] = float(p)
@@ -698,7 +716,12 @@ def driver(args: argparse.Namespace) -> None:
 
     print(f"Evaluation code for ChemoTimelines Shared Task. Version: {VERSION}")
     print("Reading from files...")
-    pred_all_patient, gold_all_patient, all_ids, gold_ids = read_files(args=args)
+    pred_all_patient, gold_all_patient, all_ids, gold_ids = read_files(
+        gold_id_path=args.gold_id_path,
+        all_id_path=args.all_id_path,
+        gold_path=args.gold_path,
+        pred_path=args.pred_path,
+    )
     print(
         f"predicted output: {len(pred_all_patient)}, gold annotation: {len(gold_all_patient)}, all ids: {len(all_ids)}"
     )
@@ -707,7 +730,9 @@ def driver(args: argparse.Namespace) -> None:
         pred_all_patient=pred_all_patient,
         gold_all_patient=gold_all_patient,
         gold_ids=gold_ids,
-        args=args,
+        strict=args.strict,
+        relaxed_to=args.relaxed_to,
+        debug=args.debug,
     )
     all_true_pos, all_false_pos, all_false_neg = ss_matrix
     local_f1, local_precision, local_recall = metrics_matrix
