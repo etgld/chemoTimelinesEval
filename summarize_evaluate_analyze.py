@@ -2,14 +2,12 @@ import argparse
 
 from .docker_output_error_analysis import write_instances_and_summaries
 from .docker_output_to_timeline import TimelineDict, convert_resolve_write
-from .eval_timeline import (DebugDict, evaluate_and_log,
-                            read_all_patients)
+from .eval_timeline import DebugDict, evaluate_and_log, read_all_patients
 
 parser = argparse.ArgumentParser(description="Knitting spaghetti")
 
 parser.add_argument("--input_tsv", type=str)
 parser.add_argument("--gold_path", required=True, help="A gold annotation json file")
-parser.add_argument("--cancer_type", choices=["ovarian", "breast", "melanoma"])
 parser.add_argument("--output_dir", type=str)
 parser.add_argument(
     "--all_id_path",
@@ -22,12 +20,6 @@ parser.add_argument(
     help="(Only for test evaluation) Path to file with list of gold annotated ids, delimited by new line characters",
 )
 
-parser.add_argument(
-    "--patient_level_metrics",
-    required=False,
-    help="Output metrics by patient ID",
-    action="store_true",
-)
 parser.add_argument(
     "--debug",
     required=False,
@@ -47,9 +39,7 @@ parser.add_argument(
 
 
 def driver(args: argparse.Namespace) -> None:
-    pred_timeline: TimelineDict | None = convert_resolve_write(
-        input_tsv=args.input_tsv, cancer_type=args.cancer_type
-    )
+    pred_timeline: TimelineDict | None = convert_resolve_write(input_tsv=args.input_tsv)
     if pred_timeline is None:
         return
     gold_timeline: TimelineDict = read_all_patients(args.gold_path)
@@ -61,7 +51,7 @@ def driver(args: argparse.Namespace) -> None:
         strict=args.strict,
         relaxed_to=args.relaxed_to,
         debug=args.debug,
-        patient_level_metrics=args.patient_level_metrics,
+        patient_level_metrics=False,
     )
     if args.strict:
         eval_mode = "strict"

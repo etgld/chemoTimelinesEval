@@ -1,11 +1,9 @@
 import argparse
-from io import TextIOWrapper
 import json
 from collections import Counter
 from datetime import datetime
 from enum import Enum
 from functools import reduce
-from operator import itemgetter
 from typing import Dict, List, Tuple, cast
 
 import dateutil.parser
@@ -309,10 +307,10 @@ def write_summaries(
         for error_type in ErrorType
     }
 
-    def write_patient_count_dict(patient_count_dict, writer):
+    def write_patient_count_dict(patient_count_dict, writer, top_k):
         for error_type, patient_counts in patient_count_dict.items():
-            writer.write(f"\n\n\nTop 10 Patients for {error_type}")
-            for patient_id, count in patient_counts.most_common(10):
+            writer.write(f"\n\n\nTop {top_k} Patients for {error_type}")
+            for patient_id, count in patient_counts.most_common(top_k):
                 writer.write(f"{patient_id}\t{count}")
 
     with open(output_dir + "/metrics_.txt", mode="wt") as outfile:
@@ -330,8 +328,8 @@ def write_summaries(
         outfile.write("ErrorCause\tTotal")
         for error_cause, count in total_causes.most_common():
             outfile.write(f"{error_cause}\t{count}")
-        write_patient_count_dict(cause_to_patient_count, outfile)
-        write_patient_count_dict(type_to_patient_count, outfile)
+        write_patient_count_dict(cause_to_patient_count, outfile, 10)
+        write_patient_count_dict(type_to_patient_count, outfile, 10)
 
 
 def write_patient_error_reports(

@@ -182,7 +182,7 @@ def convert_docker_output(
 
 def convert_resolve_write(
     input_tsv: str,
-    cancer_type: str,
+    cancer_type: Optional[str] = None,
     output_dir: Optional[str] = None,
     impute_relative: bool = False,
 ) -> Optional[TimelineDict]:
@@ -197,22 +197,21 @@ def convert_resolve_write(
     for patient_id in no_discovery_pt_ids:
         resolved_timelines[patient_id] = []
 
-    outfile_name = cancer_type + "_timelines"
-
-    if impute_relative:
-        outfile_name += "_impute_relative"
-
-    outfile_name += ".json"
-
-    if output_dir is None:
+    if output_dir is None and cancer_type is None:
         return resolved_timelines
 
+    assert cancer_type is not None and output_dir is not None
+
+    outfile_name = cancer_type + "_timelines.json"
+    if impute_relative:
+        outfile_name += "_impute_relative"
     write_to_output(
         resolved_timelines,
         os.path.join(output_dir, outfile_name),
     )
     print(f"Wrote summarized outputs to {outfile_name}")
-    return None # so mypy doesn't compain about the Optional
+    return None  # so mypy doesn't compain about the Optional
+
 
 def main() -> None:
     args = parser.parse_args()
