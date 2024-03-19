@@ -10,7 +10,7 @@ import dateutil.parser
 import pandas as pd
 from tabulate import tabulate
 
-from docker_output_to_timeline import TimelineDict
+from eval_timeline import DebugDict, TimelineTuple, TimelineTuples
 
 parser = argparse.ArgumentParser(description="")
 
@@ -136,7 +136,7 @@ def compatible_chemos(chemo1: str, chemo2: str):
 def collect_error_events(
     patient_id: str,
     eval_mode: str,
-    error_dict: TimelineDict,
+    error_dict: Dict[str, TimelineTuples],
     docker_df: pd.DataFrame,
 ) -> Tuple[List[ErrorDebug], List[ErrorDebug]]:
     patient_df = docker_df.loc[docker_df["patient_id"] == patient_id]
@@ -194,9 +194,9 @@ def preimage_and_cause(
 
 
 def collect_fp_events(
-    false_positives: List[List[str]], eval_mode: str, patient_df: pd.DataFrame
+    false_positives: TimelineTuples, eval_mode: str, patient_df: pd.DataFrame
 ) -> List[ErrorDebug]:
-    def fp_instance(timelines_event: List[str]) -> ErrorDebug:
+    def fp_instance(timelines_event: TimelineTuple) -> ErrorDebug:
         # since the resulting tlink is predetermined
         # given the conflict resolution rules
         chemo_text, tlink, normed_timex = timelines_event
@@ -218,9 +218,9 @@ def collect_fp_events(
 
 
 def collect_fn_events(
-    false_negatives: List[List[str]], eval_mode: str, patient_df: pd.DataFrame
+    false_negatives: TimelineTuples, eval_mode: str, patient_df: pd.DataFrame
 ) -> List[ErrorDebug]:
-    def fn_instance(timelines_event: List[str]) -> ErrorDebug:
+    def fn_instance(timelines_event: TimelineTuple) -> ErrorDebug:
         # since the resulting tlink is predetermined
         # given the conflict resolution rules
         chemo_text, tlink, normed_timex = timelines_event
@@ -332,18 +332,18 @@ def write_patient_error_reports(
 
 
 def write_instances_and_summaries(
-    docker_tsv: str, error_dict: str | Dict[str, TimelineDict], output_dir: str, eval_mode: str
+    docker_tsv: str, error_dict: str | DebugDict, output_dir: str, eval_mode: str
 ) -> None:
     docker_df = pd.read_csv(docker_tsv, delimiter="\t")
     patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]] = {}
     if isinstance(error_dict, str):
         with open(error_dict, mode="rt") as json_f:
-            patient_to_errors = cast(Dict[str, TimelineDict], json.load(json_f))
+            patient_to_errors = cast(Dict[str, Dict[str, TimelineTuples]], json.load(json_f))
     else:
         patient_to_errors = error_dict
-    for patient_id, pt_error_dict in patient_to_errors.items():
+    for patient_id, error_type_dict in patient_to_errors.items():
         fp_events, fn_events = collect_error_events(
-            patient_id, eval_mode, pt_error_dict, cast(pd.DataFrame, docker_df)
+            patient_id, eval_mode, error_type_dict, cast(pd.DataFrame, docker_df)
         )
         write_patient_error_reports(patient_id, fp_events, fn_events, output_dir)
         patient_error_dict[patient_id] = {
