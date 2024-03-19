@@ -5,7 +5,6 @@ import argparse
 import json
 import os
 from collections import defaultdict
-from ctypes import Union
 from typing import Dict, Iterable, List, Optional, Set, Tuple, cast
 
 import pandas as pd

@@ -510,10 +510,21 @@ def evaluation(
 
 
 def read_files(
-    gold_id_path: str, all_id_path: str, gold_path: str, pred_path: str
+    gold_id_path: str,
+    all_id_path: str,
+    gold_timeline: str | TimelineDict,
+    pred_timeline: str | TimelineDict,
 ) -> Tuple[TimelineDict, TimelineDict, List[str], List[str]]:
-    gold_all_patient = read_all_patients(gold_path)
-    pred_all_patient = read_all_patients(pred_path)
+    gold_all_patient = (
+        read_all_patients(gold_timeline)
+        if isinstance(gold_timeline, str)
+        else gold_timeline
+    )
+    pred_all_patient = (
+        read_all_patients(pred_timeline)
+        if isinstance(pred_timeline, str)
+        else pred_timeline
+    )
 
     with open(all_id_path, mode="rt") as fp:
         all_ids = [line.splitlines()[0] for line in fp.readlines()]
@@ -636,7 +647,7 @@ def macro_average_metrics(
     return type_a_macro_f1, type_b_macro_f1
 
 
-def core_loop(
+def results_and_instances(
     pred_all_patient: TimelineDict,
     gold_all_patient: TimelineDict,
     gold_ids: List[str],
@@ -711,28 +722,34 @@ def core_loop(
     return ss_matrix, metric_matrix, fn_fp_debug, local_relations
 
 
-def driver(args: argparse.Namespace) -> None:
-    logger.info(args)
-
+def evaluate_and_log(
+    gold_id_path: str,
+    all_id_path: str,
+    gold_timeline: str | TimelineDict,
+    pred_timeline: str | TimelineDict,
+    strict: bool,
+    relaxed_to: str,
+    debug: bool,
+    patient_level_metrics: bool,
+) -> None:
     print(f"Evaluation code for ChemoTimelines Shared Task. Version: {VERSION}")
     print("Reading from files...")
     pred_all_patient, gold_all_patient, all_ids, gold_ids = read_files(
-        gold_id_path=args.gold_id_path,
-        all_id_path=args.all_id_path,
-        gold_path=args.gold_path,
-        pred_path=args.pred_path,
+        gold_id_path=gold_id_path,
+        all_id_path=all_id_path,
+        gold_timeline=gold_timeline,
+        pred_timeline=pred_timeline,
     )
     print(
-        f"predicted output: {len(pred_all_patient)}, gold annotation: {len(gold_all_patient)}, all ids: {len(all_ids)}"
+        f"predicted output: {len(pred_all_patient)}, gold annotation: {len(gold_all_patient)}, all ids: {len(all_ids)}\n"
     )
-    print()
-    ss_matrix, metrics_matrix, fn_fp_debug, local_relations = core_loop(
+    ss_matrix, metrics_matrix, fn_fp_debug, local_relations = results_and_instances(
         pred_all_patient=pred_all_patient,
         gold_all_patient=gold_all_patient,
         gold_ids=gold_ids,
-        strict=args.strict,
-        relaxed_to=args.relaxed_to,
-        debug=args.debug,
+        strict=strict,
+        relaxed_to=relaxed_to,
+        debug=debug,
     )
     all_true_pos, all_false_pos, all_false_neg = ss_matrix
     local_f1, local_precision, local_recall = metrics_matrix
@@ -742,7 +759,7 @@ def driver(args: argparse.Namespace) -> None:
         all_false_neg=all_false_neg,
     )
 
-    if args.patient_level_metrics:
+    if patient_level_metrics:
         with open("patient_level_metrics.txt", mode="wt") as patient_metrics_file:
             for patient_id, precision in local_precision.items():
                 recall = local_recall[patient_id]
@@ -751,7 +768,7 @@ def driver(args: argparse.Namespace) -> None:
                 patient_metrics_file.write(f"Micro precision: {precision}\n")
                 patient_metrics_file.write(f"Micro recall: {recall}\n")
                 patient_metrics_file.write(f"Micro f1: {f1}\n\n")
-    if args.debug:
+    if debug:
         with open("patient_level_debug.json", mode="wt") as patient_debug_file:
             json.dump(fn_fp_debug, patient_debug_file, indent=4)
     type_a_macro_f1, type_b_macro_f1 = macro_average_metrics(
@@ -765,14 +782,28 @@ def driver(args: argparse.Namespace) -> None:
         "Official Score: Arithmetic mean of two types of Macro F1, type A and B, "
         + "in 'relaxed to month' setting will be used for the leaderboard. "
     )
-    if not (args.strict) and args.relaxed_to == "month":
-        print("Official Score: ", (type_a_macro_f1 + type_b_macro_f1) / 2)
+    if not (strict) and relaxed_to == "month":
+        print(f"Official Score: {(type_a_macro_f1 + type_b_macro_f1) / 2}")
     else:
         print(
             "To see the official score, please run without --strict flag, and set 'relaxed to month' setting by --relaxed_to=month "
         )
 
     print("Evaluation completed!")
+
+
+def driver(args: argparse.Namespace) -> None:
+    logger.info(args)
+    evaluate_and_log(
+        args.gold_id_path,
+        args.all_id_path,
+        args.gold_path,
+        args.pred_path,
+        args.strict,
+        args.relaxed_to,
+        args.debug,
+        args.patient_level_metrics,
+    )
 
 
 def main() -> None:

@@ -10,6 +10,8 @@ import dateutil.parser
 import pandas as pd
 from tabulate import tabulate
 
+from docker_output_to_timeline import TimelineDict
+
 parser = argparse.ArgumentParser(description="")
 
 parser.add_argument("--docker_tsv", type=str)
@@ -134,7 +136,7 @@ def compatible_chemos(chemo1: str, chemo2: str):
 def collect_error_events(
     patient_id: str,
     eval_mode: str,
-    error_dict: Dict[str, List[List[str]]],
+    error_dict: TimelineDict,
     docker_df: pd.DataFrame,
 ) -> Tuple[List[ErrorDebug], List[ErrorDebug]]:
     patient_df = docker_df.loc[docker_df["patient_id"] == patient_id]
@@ -330,15 +332,18 @@ def write_patient_error_reports(
 
 
 def write_instances_and_summaries(
-    docker_tsv: str, error_json: str, output_dir: str, eval_mode: str
+    docker_tsv: str, error_dict: str | Dict[str, TimelineDict], output_dir: str, eval_mode: str
 ) -> None:
     docker_df = pd.read_csv(docker_tsv, delimiter="\t")
     patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]] = {}
-    with open(error_json, mode="rt") as json_f:
-        patient_to_errors = json.load(json_f)
-    for patient_id, error_dict in patient_to_errors.items():
+    if isinstance(error_dict, str):
+        with open(error_dict, mode="rt") as json_f:
+            patient_to_errors = cast(Dict[str, TimelineDict], json.load(json_f))
+    else:
+        patient_to_errors = error_dict
+    for patient_id, pt_error_dict in patient_to_errors.items():
         fp_events, fn_events = collect_error_events(
-            patient_id, eval_mode, error_dict, cast(pd.DataFrame, docker_df)
+            patient_id, eval_mode, pt_error_dict, cast(pd.DataFrame, docker_df)
         )
         write_patient_error_reports(patient_id, fp_events, fn_events, output_dir)
         patient_error_dict[patient_id] = {
