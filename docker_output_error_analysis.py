@@ -1,9 +1,11 @@
 import argparse
+from io import TextIOWrapper
 import json
 from collections import Counter
 from datetime import datetime
 from enum import Enum
 from functools import reduce
+from operator import itemgetter
 from typing import Dict, List, Tuple, cast
 
 import dateutil.parser
@@ -307,6 +309,30 @@ def write_summaries(
         for error_type in ErrorType
     }
 
+    def write_patient_count_dict(patient_count_dict, writer):
+        for error_type, patient_counts in patient_count_dict.items():
+            writer.write(f"\n\n\nTop 10 Patients for {error_type}")
+            for patient_id, count in patient_counts.most_common(10):
+                writer.write(f"{patient_id}\t{count}")
+
+    with open(output_dir + "/metrics_.txt", mode="wt") as outfile:
+        outfile.write(
+            f"Total False Positives: {fp_total}\tTotal False Negatives: {fn_total}\n\n\n"
+        )
+        # cause_counts_tuples = [
+        #     (cause, count)
+        #     for cause, count in sorted(
+        #         total_causes.items(), key=itemgetter(1), reverse=True
+        #     )
+        # ]
+        # causes, counts = zip(*cause_counts_tuples)
+        # cause_counts_table = tabulate(counts, headers=causes)
+        outfile.write("ErrorCause\tTotal")
+        for error_cause, count in total_causes.most_common():
+            outfile.write(f"{error_cause}\t{count}")
+        write_patient_count_dict(cause_to_patient_count, outfile)
+        write_patient_count_dict(type_to_patient_count, outfile)
+
 
 def write_patient_error_reports(
     patient_id: str,
@@ -338,7 +364,9 @@ def write_instances_and_summaries(
     patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]] = {}
     if isinstance(error_dict, str):
         with open(error_dict, mode="rt") as json_f:
-            patient_to_errors = cast(Dict[str, Dict[str, TimelineTuples]], json.load(json_f))
+            patient_to_errors = cast(
+                Dict[str, Dict[str, TimelineTuples]], json.load(json_f)
+            )
     else:
         patient_to_errors = error_dict
     for patient_id, error_type_dict in patient_to_errors.items():
