@@ -790,7 +790,7 @@ def evaluate_and_log(
         )
 
     print("Evaluation completed!")
-
+    return None # for mypy
 
 def driver(args: argparse.Namespace) -> None:
     logger.info(args)

@@ -68,7 +68,7 @@ class ErrorDebug:
             if len(self.pred_instances) > 0
             else ""
         )
-        return f"\n\nSource Instance:\n\n{source_table}\n\nPredicted Instances:\n\n{pred_table}"
+        return f"\n\n{self.error_cause} Instance in Summary:\n\n{source_table}\n\nInstances from Docker Output:\n\n{pred_table}"
 
     def __str__(self) -> str:
         report = self.generate_report()
@@ -311,25 +311,18 @@ def write_summaries(
 
     def write_patient_count_dict(patient_count_dict, writer, top_k):
         for error_type, patient_counts in patient_count_dict.items():
-            writer.write(f"\n\n\nTop {top_k} Patients for {error_type}")
+            writer.write(f"\n\n\nTop {top_k} Patients for {error_type}\n")
             for patient_id, count in patient_counts.most_common(top_k):
-                writer.write(f"{patient_id}\t{count}")
+                if count > 0:
+                    writer.write(f"{patient_id}\t{count}\n")
 
-    with open(output_dir + "/metrics_.txt", mode="wt") as outfile:
+    with open(output_dir + "/metrics.txt", mode="wt") as outfile:
         outfile.write(
             f"Total False Positives: {fp_total}\tTotal False Negatives: {fn_total}\n\n\n"
         )
-        # cause_counts_tuples = [
-        #     (cause, count)
-        #     for cause, count in sorted(
-        #         total_causes.items(), key=itemgetter(1), reverse=True
-        #     )
-        # ]
-        # causes, counts = zip(*cause_counts_tuples)
-        # cause_counts_table = tabulate(counts, headers=causes)
-        outfile.write("ErrorCause\tTotal")
+        outfile.write("ErrorCause\tTotal\n")
         for error_cause, count in total_causes.most_common():
-            outfile.write(f"{error_cause}\t{count}")
+            outfile.write(f"{error_cause}\t{count}\n")
         write_patient_count_dict(cause_to_patient_count, outfile, 10)
         write_patient_count_dict(type_to_patient_count, outfile, 10)
 
