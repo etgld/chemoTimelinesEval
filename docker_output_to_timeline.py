@@ -153,14 +153,14 @@ def convert_docker_output(
     ]
 
     normed_timexes_with_tlinks = no_none_tlinks.loc[
-        no_none_tlinks["normed_timex"] != ["none"]
+        no_none_tlinks["normed_timex"] != "none"
     ]
 
     if impute_relative:
         normed_timexes_with_tlinks = impute_relative_timexes(normed_timexes_with_tlinks)
 
     acceptable_normed_timexes_with_tlinks = normed_timexes_with_tlinks.loc[
-        normed_timexes_with_tlinks.apply(keep_normalized_timex)
+        normed_timexes_with_tlinks.apply(keep_normalized_timex, axis=1)
     ]
 
     no_discovery_pt_ids = set(

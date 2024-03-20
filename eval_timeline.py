@@ -50,13 +50,12 @@ parser.add_argument(
 )
 
 parser.add_argument(
-    "--strict", action="store_true", help="do strict eval", type=bool, default=False
+    "--strict", action="store_true", help="do strict eval", default=False
 )
 parser.add_argument(
     "--relaxed_to",
     help="Type 'year' to only evaluate year, 'month' to evaluate year and month, "
     "or 'day' to evaluate year-month-day",
-    type=str,
     choices=["day", "month", "year"],
 )
 # ideally will standardize this to the tuple case
