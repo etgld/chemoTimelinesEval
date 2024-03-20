@@ -126,7 +126,28 @@ def write_to_output(data: TimelineDict, outfile_name: str) -> None:
 
 def keep_normalized_timex(pandas_row: pd.Series) -> bool:
     normalized_timex = cast(str, pandas_row.normed_timex)
-    return normalized_timex.split("-")[0].isnumeric()
+    components = normalized_timex.split("-")
+    valid_prefix = components[0].isnumeric()
+    valid_suffix = True
+    if len(components) > 1:
+        # avoiding seasonal expressions
+        # valid_suffix = components[1].lower() not in {"sp", "su", "fa", "wi"}
+        valid_suffix = components[1].isnumeric() or "w" in components[1].lower()
+    return valid_prefix and valid_suffix
+
+
+def clean_timex(pandas_row: pd.Series) -> str:
+    normalized_timex = cast(str, pandas_row.normed_timex)
+    components = normalized_timex.split("-")
+    valid_prefix = components[0].isnumeric()
+    valid_suffix = True
+    if len(components) > 1:
+        # avoiding seasonal expressions
+        # valid_suffix = components[1].lower() not in {"sp", "su", "fa", "wi"}
+        valid_suffix = components[1].isnumeric() or "w" in components[1].lower()
+    if valid_prefix and not valid_suffix:
+        return components[0]
+    return normalized_timex
 
 
 def impute_relative_timexes(dataframe: pd.DataFrame) -> pd.DataFrame:
@@ -158,6 +179,10 @@ def convert_docker_output(
 
     if impute_relative:
         normed_timexes_with_tlinks = impute_relative_timexes(normed_timexes_with_tlinks)
+
+    normed_timexes_with_tlinks["normed_timex"] = normed_timexes_with_tlinks.apply(
+        clean_timex, axis=1
+    )
 
     acceptable_normed_timexes_with_tlinks = normed_timexes_with_tlinks.loc[
         normed_timexes_with_tlinks.apply(keep_normalized_timex, axis=1)

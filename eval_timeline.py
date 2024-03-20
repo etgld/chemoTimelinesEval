@@ -731,6 +731,7 @@ def evaluate_and_log(
     debug: bool,
     patient_level_metrics: bool,
 ) -> Optional[DebugDict]:
+    final_out: Optional[DebugDict] = None
     print(f"Evaluation code for ChemoTimelines Shared Task. Version: {VERSION}")
     print("Reading from files...")
     pred_all_patient, gold_all_patient, all_ids, gold_ids = read_files(
@@ -770,7 +771,7 @@ def evaluate_and_log(
     if debug:
         with open("patient_level_debug.json", mode="wt") as patient_debug_file:
             json.dump(fn_fp_debug, patient_debug_file, indent=4)
-        return fn_fp_debug
+        final_out = fn_fp_debug
     type_a_macro_f1, type_b_macro_f1 = macro_average_metrics(
         local_precision=local_precision,
         local_recall=local_recall,
@@ -790,7 +791,8 @@ def evaluate_and_log(
         )
 
     print("Evaluation completed!")
-    return None # for mypy
+    return final_out
+
 
 def driver(args: argparse.Namespace) -> None:
     logger.info(args)
