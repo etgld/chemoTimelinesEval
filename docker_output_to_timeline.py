@@ -1,6 +1,7 @@
 """
 Convert predictions of run_glue.py to event-timex pairs and summarize to timelines.
 """
+
 import argparse
 import json
 import os
@@ -132,7 +133,9 @@ def keep_normalized_timex(pandas_row: pd.Series) -> bool:
     if len(components) > 1:
         # avoiding seasonal expressions
         # valid_suffix = components[1].lower() not in {"sp", "su", "fa", "wi"}
-        valid_suffix = components[1].isnumeric() or "w" in components[1].lower()
+        valid_suffix = components[1].isnumeric() or (
+            "w" in components[1].lower() and components[1][1:].isnumeric()
+        )
     return valid_prefix and valid_suffix
 
 
@@ -144,16 +147,18 @@ def clean_timex(pandas_row: pd.Series) -> str:
     if len(components) > 1:
         # avoiding seasonal expressions
         # valid_suffix = components[1].lower() not in {"sp", "su", "fa", "wi"}
-        valid_suffix = components[1].isnumeric() or "w" in components[1].lower()
+        valid_suffix = components[1].isnumeric() or (
+            "w" in components[1].lower() and components[1][1:].isnumeric()
+        )
     if valid_prefix and not valid_suffix:
         return components[0]
     return normalized_timex
 
 
 def impute_relative_timexes(dataframe: pd.DataFrame) -> pd.DataFrame:
-    dataframe.loc[
-        dataframe["normed_timex"] == "PRESENT_REF", "normed_timex"
-    ] = dataframe.loc[dataframe["normed_timex"] == "PRESENT_REF", "DCT"]
+    dataframe.loc[dataframe["normed_timex"] == "PRESENT_REF", "normed_timex"] = (
+        dataframe.loc[dataframe["normed_timex"] == "PRESENT_REF", "DCT"]
+    )
     return dataframe
 
 
@@ -228,6 +233,8 @@ def convert_resolve_write(
     assert cancer_type is not None and output_dir is not None
 
     outfile_name = cancer_type + "_timelines.json"
+    print(output_dir)
+    print(outfile_name)
     if impute_relative:
         outfile_name += "_impute_relative"
     write_to_output(
@@ -241,7 +248,7 @@ def convert_resolve_write(
 def main() -> None:
     args = parser.parse_args()
     convert_resolve_write(
-        args.input_tsv, args.output_dir, args.cancer_type, args.impute_relative
+        args.input_tsv, args.cancer_type, args.output_dir, args.impute_relative
     )
 
 
