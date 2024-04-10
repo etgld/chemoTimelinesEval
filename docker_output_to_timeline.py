@@ -72,7 +72,7 @@ def deduplicate(timeline_tuples: TimelineTuples) -> TimelineDict:
             target_text = target_text.split("t")[0]
         if "p" == target_text[0] and "d" in target_text[-1]:
             continue
-        note_id = source_id.split("@")[-2]
+        note_id = source_id.strip().split("@")[-2]
         patient_id = note_id.split("_")[0]
 
         merged_rows[patient_id][(source_text, rel)].add(target_text)
@@ -156,9 +156,9 @@ def clean_timex(pandas_row: pd.Series) -> str:
 
 
 def impute_relative_timexes(dataframe: pd.DataFrame) -> pd.DataFrame:
-    dataframe.loc[dataframe["normed_timex"] == "PRESENT_REF", "normed_timex"] = (
-        dataframe.loc[dataframe["normed_timex"] == "PRESENT_REF", "DCT"]
-    )
+    dataframe.loc[
+        dataframe["normed_timex"] == "PRESENT_REF", "normed_timex"
+    ] = dataframe.loc[dataframe["normed_timex"] == "PRESENT_REF", "DCT"]
     return dataframe
 
 
@@ -233,15 +233,12 @@ def convert_resolve_write(
     assert cancer_type is not None and output_dir is not None
 
     outfile_name = cancer_type + "_timelines.json"
-    print(output_dir)
-    print(outfile_name)
     if impute_relative:
         outfile_name += "_impute_relative"
     write_to_output(
         resolved_timelines,
         os.path.join(output_dir, outfile_name),
     )
-    print(f"Wrote summarized outputs to {outfile_name}")
     return None  # so mypy doesn't compain about the Optional
 
 

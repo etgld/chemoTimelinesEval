@@ -35,7 +35,7 @@ label_to_hierarchy = {
 }
 
 source_header = ["chemo", "tlink", "normed timex", "mode"]
-pred_header = ["chemo", "tlink", "normed timex", "note name"]
+pred_header = ["chemo", "tlink", "normed timex", "note name", "classifier input"]
 eval_modes = {"strict", "day", "month", "year"}
 
 
@@ -68,6 +68,10 @@ class ErrorDebug:
             if len(self.pred_instances) > 0
             else ""
         )
+        if len(self.pred_instances) > 0:
+            print(self.source_instance)
+            print(self.pred_instances)
+            print(pred_table)
         return f"\n\n{self.error_cause} Instance in Summary:\n\n{source_table}\n\nInstances from Docker Output:\n\n{pred_table}"
 
     def __str__(self) -> str:
@@ -175,7 +179,7 @@ def preimage_and_cause(
     if error_type == ErrorType.FALSE_NEGATIVE:
         return (
             timex_chemo_matches[
-                ["chemo_text", "tlink", "normed_timex", "note_name"]
+                ["chemo_text", "tlink", "normed_timex", "note_name", "tlink_inst"]
             ].values.tolist(),
             ErrorCause.TLINK,
         )
@@ -189,7 +193,7 @@ def preimage_and_cause(
     ]
     return (
         full_matches[
-            ["chemo_text", "tlink", "normed_timex", "note_name"]
+            ["chemo_text", "tlink", "normed_timex", "note_name", "tlink_inst"]
         ].values.tolist(),
         ErrorCause.TLINK,
     )

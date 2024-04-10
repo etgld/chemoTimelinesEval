@@ -529,7 +529,6 @@ def read_files(
         all_ids = [line.splitlines()[0] for line in fp.readlines()]
 
     # Sanity check
-    print(gold_all_patient)
     if len(all_ids) == 0 or len(all_ids) != len(pred_all_patient):
         # raise ValueError(f"Malformated or some patients are missing in prediction file. all ids {sorted(all_ids)} vs {sorted(pred_all_patient)}")
         # print(f"before {pred_all_patient}")
