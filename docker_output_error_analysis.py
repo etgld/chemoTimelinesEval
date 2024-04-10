@@ -68,10 +68,6 @@ class ErrorDebug:
             if len(self.pred_instances) > 0
             else ""
         )
-        if len(self.pred_instances) > 0:
-            print(self.source_instance)
-            print(self.pred_instances)
-            print(pred_table)
         return f"\n\n{self.error_cause} Instance in Summary:\n\n{source_table}\n\nInstances from Docker Output:\n\n{pred_table}"
 
     def __str__(self) -> str:
