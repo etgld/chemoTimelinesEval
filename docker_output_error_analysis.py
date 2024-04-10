@@ -140,8 +140,12 @@ def collect_error_events(
     docker_df: pd.DataFrame,
 ) -> Tuple[List[ErrorDebug], List[ErrorDebug]]:
     patient_df = docker_df.loc[docker_df["patient_id"] == patient_id]
-    fp_events = collect_fp_events(error_dict["false_positive"], eval_mode, patient_df)
-    fn_events = collect_fn_events(error_dict["false_negative"], eval_mode, patient_df)
+    fp_events = false_events_by_type(
+        ErrorType.FALSE_POSITIVE, error_dict["false_positive"], eval_mode, patient_df
+    )
+    fn_events = false_events_by_type(
+        ErrorType.FALSE_NEGATIVE, error_dict["false_negative"], eval_mode, patient_df
+    )
     return fp_events, fn_events
 
 
@@ -195,15 +199,16 @@ def preimage_and_cause(
     )
 
 
-def collect_fp_events(
-    false_positives: TimelineTuples, eval_mode: str, patient_df: pd.DataFrame
+def false_events_by_type(
+    error_type: ErrorType,
+    false_of_type: TimelineTuples,
+    eval_mode: str,
+    patient_df: pd.DataFrame,
 ) -> List[ErrorDebug]:
-    def fp_instance(timelines_event: TimelineTuple) -> ErrorDebug:
-        # since the resulting tlink is predetermined
-        # given the conflict resolution rules
+    def false_of_type_instance(timelines_event: TimelineTuple) -> ErrorDebug:
         chemo_text, tlink, normed_timex = timelines_event
         summarization_preimage, error_cause = preimage_and_cause(
-            ErrorType.FALSE_POSITIVE,
+            error_type,
             chemo_text,
             tlink,
             normed_timex,
@@ -212,35 +217,11 @@ def collect_fp_events(
         )
         return ErrorDebug(
             [[*timelines_event, eval_mode], *summarization_preimage],
-            ErrorType.FALSE_POSITIVE,
+            error_type,
             error_cause,
         )
 
-    return [fp_instance(event) for event in false_positives]
-
-
-def collect_fn_events(
-    false_negatives: TimelineTuples, eval_mode: str, patient_df: pd.DataFrame
-) -> List[ErrorDebug]:
-    def fn_instance(timelines_event: TimelineTuple) -> ErrorDebug:
-        # since the resulting tlink is predetermined
-        # given the conflict resolution rules
-        chemo_text, tlink, normed_timex = timelines_event
-        summarization_preimage, error_cause = preimage_and_cause(
-            ErrorType.FALSE_POSITIVE,
-            chemo_text,
-            tlink,
-            normed_timex,
-            eval_mode,
-            patient_df,
-        )
-        return ErrorDebug(
-            [[*timelines_event, eval_mode], *summarization_preimage],
-            ErrorType.FALSE_NEGATIVE,
-            error_cause,
-        )
-
-    return [fn_instance(event) for event in false_negatives]
+    return [false_of_type_instance(event) for event in false_of_type]
 
 
 def get_error_cause_count(events: List[ErrorDebug]) -> Counter[ErrorCause]:
@@ -336,12 +317,12 @@ def write_patient_error_reports(
     fn = output_dir + "/" + patient_id + "_error_analysis.txt"
 
     fp_str = (
-        "\n\nFalse Positives\n\n" + "\n".join(map(str, fp_events))
+        "\n\nFalse Positives\n\n" + "\n".join(str(fp) for fp in fp_events)
         if len(fp_events) > 0
         else ""
     )
     fn_str = (
-        "\n\nFalse Negatives\n\n" + "\n".join(map(str, fn_events))
+        "\n\nFalse Negatives\n\n" + "\n".join(str(fn) for fn in fn_events)
         if len(fn_events) > 0
         else ""
     )
