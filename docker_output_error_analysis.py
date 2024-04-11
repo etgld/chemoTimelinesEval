@@ -5,7 +5,7 @@ from collections import Counter
 from datetime import datetime
 from enum import Enum
 from functools import reduce
-from typing import Dict, Iterable, List, Tuple, cast
+from typing import Dict, Iterable, List, Tuple, Union, cast
 
 import dateutil.parser
 import pandas as pd
@@ -263,8 +263,8 @@ def false_events_by_type(
     return [false_of_type_instance(event) for event in false_of_type]
 
 
-def get_error_cause_count(events: List[ErrorDebug]) -> Counter[ErrorCause]:
-    return Counter(map(ErrorDebug.get_error_cause, events))
+def get_error_cause_count(events: Iterable[ErrorDebug]) -> Counter[ErrorCause]:
+    return Counter(ErrorDebug.get_error_cause(event) for event in events)
 
 
 def get_type_raw_total(
@@ -371,7 +371,7 @@ def write_patient_error_reports(
 
 
 def write_instances_and_summaries(
-    docker_tsv: str, error_dict: str | DebugDict, output_dir: str, eval_mode: str
+    docker_tsv: str, error_dict: Union[str, DebugDict], output_dir: str, eval_mode: str
 ) -> None:
     docker_df = pd.read_csv(docker_tsv, delimiter="\t")
     patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]] = {}
