@@ -50,12 +50,22 @@ docker_output_columns = [
 ]
 
 
+def normalize_str(string: str) -> str:
+    return string[0].capitalize() + string[1:].lower()
+
+
 class ErrorType(Enum):
+    def __str__(self) -> str:
+        return " ".join(normalize_str(s) for s in self.name.split("_"))
+
     FALSE_POSITIVE = 1
     FALSE_NEGATIVE = 2
 
 
 class ErrorCause(Enum):
+    def __str__(self) -> str:
+        return normalize_str(self.name)
+
     TLINK = 1
     CHEMO = 2
     TIMEX = 3
@@ -111,7 +121,7 @@ class ErrorDebug:
             if len(self.chemo_and_timex_matches) > 0
             else ""
         )
-        return f"\n\n{self.error_cause} Instance in Summary:\n\n{source_table}\n\nTLINK, Chemo, and Timex Matches from Docker Output:\n\n{tlink_table}\n\nChemo and Timex Only Matches from Docker Output:\n\n{chemo_and_timex_table}"
+        return f"\n\n{str(self.error_type)} {str(self.error_cause)} Instance:\n\n{source_table}\n\nTLINK, Chemo, and Timex Matches from Docker Output:\n\n{tlink_table}\n\nChemo and Timex Only Matches from Docker Output:\n\n{chemo_and_timex_table}"
 
     def __str__(self) -> str:
         report = self.generate_report()
