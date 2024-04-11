@@ -1,15 +1,16 @@
 import argparse
 import json
+import textwrap
 from collections import Counter
 from datetime import datetime
 from enum import Enum
 from functools import reduce
-from typing import Dict, List, Tuple, cast
+from typing import Dict, Iterable, List, Tuple, cast
 
 import dateutil.parser
 import pandas as pd
 from tabulate import tabulate
-
+from more_itertools import partition
 from eval_timeline import DebugDict, TimelineTuple, TimelineTuples
 
 parser = argparse.ArgumentParser(description="")
@@ -24,6 +25,7 @@ parser.add_argument(
     "or 'day' to evaluate year-month-day",
     choices=["day", "month", "year"],
 )
+CLASSIFIER_INST_WIDTH = 60
 # chemo, rel, timex, filename
 instance = List[str]
 label_to_hierarchy = {
@@ -32,11 +34,20 @@ label_to_hierarchy = {
     "contains": 2,
     "contains-1": 2,
     "before": 3,
+    "none": 4,
 }
 
-source_header = ["chemo", "tlink", "normed timex", "mode"]
-pred_header = ["chemo", "tlink", "normed timex", "note name", "classifier input"]
+source_header = ["chemo", "tlink", "normed timex", "evaluation mode"]
+pred_header = ["chemo", "tlink", "normed timex", "note", "DCT", "instance"]
 eval_modes = {"strict", "day", "month", "year"}
+docker_output_columns = [
+    "chemo_text",
+    "tlink",
+    "normed_timex",
+    "note_name",
+    "DCT",
+    "tlink_inst",
+]
 
 
 class ErrorType(Enum):
@@ -55,20 +66,52 @@ class ErrorDebug:
         self, instances: List[instance], error_type: ErrorType, error_cause: ErrorCause
     ) -> None:
         self.source_instance = instances[0]
-        self.pred_instances = instances[1:]
+        source_tlink = self.source_instance[1]
+        # sort by label precedence then note name
+        sorted_insts = ErrorDebug._format_and_sort_instances(instances[1:])
+        tlink_non_matches, tlink_matches = partition(
+            lambda inst: inst[1] == source_tlink, sorted_insts
+        )
+        self.tlink_matches = list(tlink_matches)
+        self.chemo_and_timex_matches = list(tlink_non_matches)
         self.error_type = error_type
         self.error_cause = error_cause
+
+    @staticmethod
+    def _format_and_sort_instances(instances: Iterable[instance]) -> List[instance]:
+        def format_date(raw_date: str) -> str:
+            year = raw_date[0:4]
+            month = raw_date[4:6]
+            day = raw_date[6:]
+            return year + "_" + month + "_" + day
+
+        def wrap_tlink_inst(inst: instance) -> instance:
+            return [
+                *inst[:-2],
+                format_date(str(inst[-2])),
+                "\n".join(textwrap.wrap(inst[-1], width=CLASSIFIER_INST_WIDTH)),
+            ]
+
+        wrapped_instances = (wrap_tlink_inst(inst) for inst in instances)
+        return sorted(
+            wrapped_instances, key=lambda inst: (label_to_hierarchy[inst[1]], inst[3])
+        )
 
     def generate_report(self) -> str:
         source_table = tabulate(
             [source_header, self.source_instance], headers="firstrow"
         )
-        pred_table = (
-            tabulate([pred_header, *self.pred_instances], headers="firstrow")
-            if len(self.pred_instances) > 0
+        tlink_table = (
+            tabulate([pred_header, *self.tlink_matches], headers="firstrow")
+            if len(self.tlink_matches) > 0
             else ""
         )
-        return f"\n\n{self.error_cause} Instance in Summary:\n\n{source_table}\n\nInstances from Docker Output:\n\n{pred_table}"
+        chemo_and_timex_table = (
+            tabulate([pred_header, *self.chemo_and_timex_matches], headers="firstrow")
+            if len(self.chemo_and_timex_matches) > 0
+            else ""
+        )
+        return f"\n\n{self.error_cause} Instance in Summary:\n\n{source_table}\n\nTLINK, Chemo, and Timex Matches from Docker Output:\n\n{tlink_table}\n\nChemo and Timex Only Matches from Docker Output:\n\n{chemo_and_timex_table}"
 
     def __str__(self) -> str:
         report = self.generate_report()
@@ -178,9 +221,7 @@ def preimage_and_cause(
 
     if error_type == ErrorType.FALSE_NEGATIVE:
         return (
-            timex_chemo_matches[
-                ["chemo_text", "tlink", "normed_timex", "note_name", "tlink_inst"]
-            ].values.tolist(),
+            timex_chemo_matches[docker_output_columns].values.tolist(),
             ErrorCause.TLINK,
         )
 
@@ -192,9 +233,7 @@ def preimage_and_cause(
         timex_chemo_matches.apply(row_tlink_compatible, axis=1)
     ]
     return (
-        full_matches[
-            ["chemo_text", "tlink", "normed_timex", "note_name", "tlink_inst"]
-        ].values.tolist(),
+        full_matches[docker_output_columns].values.tolist(),
         ErrorCause.TLINK,
     )
 
