@@ -18,6 +18,7 @@ from scipy.stats import norm
 from tabulate import tabulate
 
 from eval_timeline import DebugDict, TimelineTuple, TimelineTuples
+from docker_output_to_timeline import keep_normalized_timex, clean_timex
 
 parser = argparse.ArgumentParser(description="")
 
@@ -147,7 +148,22 @@ class ErrorDebug:
             if len(self.chemo_and_timex_matches) > 0
             else ""
         )
-        return f"\n\n{str(self.error_type)} {str(self.error_cause)} Instance:\n\n{source_table}\n\nTLINK, Chemo, and Timex Matches from Docker Output:\n\n{tlink_table}\n\nChemo and Timex Only Matches from Docker Output:\n\n{chemo_and_timex_table}"
+        core_instance = f"\n\n{str(self.error_type)} {str(self.error_cause)} Instance:\n\n{source_table}\n\n"
+        tlink_table_str = (
+            f"TLINK, Chemo, and Timex Matches from Docker Output:\n\n{tlink_table}\n\n"
+            if len(tlink_table) > 0
+            else ""
+        )
+        chemo_and_timex_table_str = (
+            f"Chemo and Timex Only Matches from Docker Output:\n\n{chemo_and_timex_table}"
+            if len(chemo_and_timex_table) > 0
+            else ""
+        )
+        if len(tlink_table_str) > 0 or len(chemo_and_timex_table_str) > 0:
+            suffix = tlink_table_str + chemo_and_timex_table_str
+        else:
+            suffix = "No matches found in Docker output"
+        return core_instance + suffix
 
     def __str__(self) -> str:
         report = self.generate_report()
@@ -183,6 +199,8 @@ def relaxed_day_eval(time1: str, time2: str) -> bool:
 def relaxed_month_eval(time1: str, time2: str) -> bool:
     norm_time1 = datetime_normalize(time1)
     norm_time2 = datetime_normalize(time2)
+    print(f"comparator normed unnormed {time1} {norm_time1}")
+    print(f"comparator normed unnormed {time2} {norm_time2}")
     return (norm_time1.year, norm_time1.month) == (norm_time2.year, norm_time2.month)
 
 
@@ -194,13 +212,14 @@ def relaxed_year_eval(time1: str, time2: str) -> bool:
 
 mode_to_eval = {
     "strict": strict_eval,
-    "relaxed_day": relaxed_day_eval,
-    "relaxed_month": relaxed_month_eval,
-    "relaxed_year": relaxed_year_eval,
+    "day": relaxed_day_eval,
+    "month": relaxed_month_eval,
+    "year": relaxed_year_eval,
 }
 
 
 def compatible_time(time1: str, time2: str, eval_mode: str) -> bool:
+    print(f"{time1} {time2} {eval_mode}")
     if eval_mode in mode_to_eval:
         return mode_to_eval[eval_mode](time1, time2)
     else:
@@ -244,21 +263,23 @@ def preimage_and_cause(
     if len(chemo_matches) == 0:
         return [], ErrorCause.CHEMO
 
+    chemo_matches["normed_timex"] = chemo_matches.apply(clean_timex, axis=1)
+
+    chemo_matches_with_potential_timexes = chemo_matches.loc[
+        chemo_matches.apply(keep_normalized_timex, axis=1)
+    ]
+
     def row_timex_compatible(pandas_row: pd.Series) -> bool:
         row_timex = cast(str, pandas_row.normed_timex)
-        print(f"in row {row_timex} against {normed_timex}")
         return compatible_time(row_timex, normed_timex, eval_mode)
 
-    timex_chemo_matches = chemo_matches.loc[
-        chemo_matches.apply(row_timex_compatible, axis=1)
+    timex_chemo_matches = chemo_matches_with_potential_timexes.loc[
+        chemo_matches_with_potential_timexes.apply(row_timex_compatible, axis=1)
     ]
-    print(set(chemo_matches["patient_id"]))
-    print(chemo_matches[docker_output_columns])
     if len(timex_chemo_matches) == 0:
         return [], ErrorCause.TIMEX
 
     if error_type == ErrorType.FALSE_NEGATIVE:
-        print(timex_chemo_matches)
         return (
             timex_chemo_matches[docker_output_columns].values.tolist(),
             ErrorCause.TLINK,
@@ -293,6 +314,8 @@ def false_events_by_type(
             eval_mode,
             patient_df,
         )
+        if len(summarization_preimage) > 0:
+            print(summarization_preimage)
         return ErrorDebug(
             [[*timelines_event, eval_mode], *summarization_preimage],
             error_type,

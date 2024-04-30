@@ -43,6 +43,7 @@ label_to_hierarchy = {
     "contains": 2,
     "contains-1": 2,
     "before": 3,
+    "after": 3
 }
 
 NORMALIZED_TIMEXES_TO_SKIP = {"Luz 5", "P2000D"}
