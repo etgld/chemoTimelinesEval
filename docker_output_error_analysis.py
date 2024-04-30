@@ -1,22 +1,23 @@
 import argparse
 import json
+import random
 import textwrap
 from collections import Counter
 from datetime import datetime
 from enum import Enum
 from functools import reduce
+from itertools import groupby
+from math import ceil
+from operator import itemgetter
 from typing import Dict, Iterable, List, Sequence, Tuple, Union, cast
 
 import dateutil.parser
-import random
 import pandas as pd
-from tabulate import tabulate
-from itertools import groupby
-from operator import itemgetter
 from more_itertools import partition
-from eval_timeline import DebugDict, TimelineTuple, TimelineTuples
-from math import ceil, sqrt
 from scipy.stats import norm
+from tabulate import tabulate
+
+from eval_timeline import DebugDict, TimelineTuple, TimelineTuples
 
 parser = argparse.ArgumentParser(description="")
 
