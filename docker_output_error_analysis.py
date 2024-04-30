@@ -174,7 +174,9 @@ class ErrorDebug:
 
 
 def raw_normalize(time: str) -> str:
-    return time.lower().split("t")[0]
+    date_only = time.lower().split("t")[0]
+    week_fixed = date_only.replace("w", "W")
+    return week_fixed
 
 
 def datetime_normalize(time: str) -> datetime:
@@ -199,8 +201,6 @@ def relaxed_day_eval(time1: str, time2: str) -> bool:
 def relaxed_month_eval(time1: str, time2: str) -> bool:
     norm_time1 = datetime_normalize(time1)
     norm_time2 = datetime_normalize(time2)
-    print(f"comparator normed unnormed {time1} {norm_time1}")
-    print(f"comparator normed unnormed {time2} {norm_time2}")
     return (norm_time1.year, norm_time1.month) == (norm_time2.year, norm_time2.month)
 
 
@@ -219,7 +219,6 @@ mode_to_eval = {
 
 
 def compatible_time(time1: str, time2: str, eval_mode: str) -> bool:
-    print(f"{time1} {time2} {eval_mode}")
     if eval_mode in mode_to_eval:
         return mode_to_eval[eval_mode](time1, time2)
     else:
@@ -273,6 +272,9 @@ def preimage_and_cause(
         row_timex = cast(str, pandas_row.normed_timex)
         return compatible_time(row_timex, normed_timex, eval_mode)
 
+    if len(chemo_matches_with_potential_timexes) == 0:
+        return [], ErrorCause.TIMEX
+
     timex_chemo_matches = chemo_matches_with_potential_timexes.loc[
         chemo_matches_with_potential_timexes.apply(row_timex_compatible, axis=1)
     ]
@@ -314,8 +316,6 @@ def false_events_by_type(
             eval_mode,
             patient_df,
         )
-        if len(summarization_preimage) > 0:
-            print(summarization_preimage)
         return ErrorDebug(
             [[*timelines_event, eval_mode], *summarization_preimage],
             error_type,

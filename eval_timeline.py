@@ -222,7 +222,8 @@ def group_chemo_dates(golds: List[TimelineTuple]) -> Dict[str, Chemo]:
     gold_group_by_start_end: Dict[str, Dict[str, List[datetime]]] = defaultdict(
         lambda: defaultdict(list)
     )
-    for tup in golds:
+    valid_golds = (tup for tup in golds if valid_timex(tup[-1]))
+    for tup in valid_golds:
         source, label, raw_target = tup
         if label.upper() not in ["BEGINS-ON", "ENDS-ON"]:
             continue
@@ -245,12 +246,26 @@ def group_chemo_dates(golds: List[TimelineTuple]) -> Dict[str, Chemo]:
     return all_gold_chemos
 
 
+def valid_timex(normalized_timex: str) -> bool:
+    components = normalized_timex.split("-")
+    valid_prefix = components[0].isnumeric()
+    valid_suffix = True
+    if len(components) > 1:
+        # avoiding seasonal expressions
+        # valid_suffix = components[1].lower() not in {"sp", "su", "fa", "wi"}
+        valid_suffix = components[1].isnumeric() or (
+            "w" in components[1].lower() and components[1][1:].isnumeric()
+        )
+    return valid_prefix and valid_suffix
+
+
 def normalize_to_month_and_year(
     golds: List[TimelineTuple],
 ) -> Tuple[List[TimelineTuple], List[TimelineTuple]]:
     month_only_pairs = []
     year_only_pairs = []
-    for tup in golds:
+    valid_golds = (tup for tup in golds if valid_timex(tup[-1]))
+    for tup in valid_golds:
         source, label, raw_target = tup
         target = datetime_normalize(raw_target)
         year = target.year
