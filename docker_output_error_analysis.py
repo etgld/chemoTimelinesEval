@@ -5,11 +5,14 @@ from collections import Counter
 from datetime import datetime
 from enum import Enum
 from functools import reduce
-from typing import Dict, Iterable, List, Tuple, Union, cast
+from typing import Dict, Iterable, List, Sequence, Tuple, Union, cast
 
 import dateutil.parser
+import random
 import pandas as pd
 from tabulate import tabulate
+from itertools import groupby
+from operator import itemgetter
 from more_itertools import partition
 from eval_timeline import DebugDict, TimelineTuple, TimelineTuples
 from math import ceil, sqrt
@@ -342,7 +345,10 @@ def patients_by_cause(
 
 
 def write_summaries(
-    patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]], output_dir: str
+    patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]],
+    output_dir: str,
+    original_fps: int,
+    original_fns: int,
 ) -> None:
     fp_total: int = get_type_raw_total(ErrorType.FALSE_POSITIVE, patient_error_dict)
     fn_total: int = get_type_raw_total(ErrorType.FALSE_NEGATIVE, patient_error_dict)
@@ -371,9 +377,9 @@ def write_summaries(
 
     with open(output_dir + "/error_metrics.txt", mode="wt") as outfile:
         outfile.write(
-            f"Total False Positives: {fp_total}\tTotal False Negatives: {fn_total}\n\n\n"
+            f"{fp_total} Sampled False Positives Out of {original_fps} \t{fn_total} Sampled False Negatives Out of {original_fns}\n\n\n"
         )
-        outfile.write("ErrorCause\tTotal\n")
+        outfile.write("ErrorCause\tTop 10\n")
         for error_cause, count in total_causes.most_common():
             outfile.write(f"{error_cause}\t{count}\n")
         write_patient_count_dict(cause_to_patient_count, outfile, 10)
@@ -404,10 +410,15 @@ def write_patient_error_reports(
 
 
 def write_instances_and_summaries(
-    docker_tsv: str, error_dict: Union[str, DebugDict], output_dir: str, eval_mode: str
+    docker_tsv: str,
+    error_dict: Union[str, DebugDict],
+    output_dir: str,
+    eval_mode: str,
 ) -> None:
     docker_df = pd.read_csv(docker_tsv, delimiter="\t")
     patient_error_dict: Dict[str, Dict[ErrorType, Counter[ErrorCause]]] = {}
+    patient_to_false_positives: Dict[str, List[ErrorDebug]] = {}
+    patient_to_false_negatives: Dict[str, List[ErrorDebug]] = {}
     if isinstance(error_dict, str):
         with open(error_dict, mode="rt") as json_f:
             patient_to_errors = cast(
@@ -419,12 +430,53 @@ def write_instances_and_summaries(
         fp_events, fn_events = collect_error_events(
             patient_id, eval_mode, error_type_dict, cast(pd.DataFrame, docker_df)
         )
-        write_patient_error_reports(patient_id, fp_events, fn_events, output_dir)
-        patient_error_dict[patient_id] = {
-            ErrorType.FALSE_NEGATIVE: get_error_cause_count(fn_events),
-            ErrorType.FALSE_POSITIVE: get_error_cause_count(fp_events),
+        patient_to_false_positives[patient_id] = fp_events
+        patient_to_false_negatives[patient_id] = fn_events
+
+    def dict_to_pairs(
+        d: Dict[str, List[ErrorDebug]]
+    ) -> Sequence[Tuple[str, ErrorDebug]]:
+        return [(key, value) for key, values in d.items() for value in values]
+
+    def pairs_to_dict(
+        i: Iterable[Tuple[str, ErrorDebug]]
+    ) -> Dict[str, List[ErrorDebug]]:
+        def group_to_list(g):
+            return list(map(itemgetter(1), g))
+
+        return {
+            patient_id: group_to_list(group)
+            for patient_id, group in groupby(
+                sorted(i, key=itemgetter(0)), key=itemgetter(0)
+            )
         }
-    write_summaries(patient_error_dict, output_dir)
+
+    total_fp = sum(map(len, patient_to_false_positives.values()))
+    total_fn = sum(map(len, patient_to_false_negatives.values()))
+    fp_sample_size = sample_size(total_fp)
+    fn_sample_size = sample_size(total_fn)
+    _sampled_fps = random.sample(
+        dict_to_pairs(patient_to_false_positives), k=fp_sample_size
+    )
+    _sampled_fns = random.sample(
+        dict_to_pairs(patient_to_false_positives), k=fn_sample_size
+    )
+    patient_to_sampled_fp = pairs_to_dict(_sampled_fps)
+    patient_to_sampled_fn = pairs_to_dict(_sampled_fns)
+    for patient_id in patient_to_sampled_fp:
+        sampled_fps = patient_to_sampled_fp[patient_id]
+        sampled_fns = patient_to_sampled_fn[patient_id]
+        write_patient_error_reports(patient_id, sampled_fps, sampled_fns, output_dir)
+        patient_error_dict[patient_id] = {
+            ErrorType.FALSE_NEGATIVE: get_error_cause_count(sampled_fns),
+            ErrorType.FALSE_POSITIVE: get_error_cause_count(sampled_fps),
+        }
+    write_summaries(
+        patient_error_dict,
+        output_dir,
+        total_fp,
+        total_fn,
+    )
 
 
 def main():
