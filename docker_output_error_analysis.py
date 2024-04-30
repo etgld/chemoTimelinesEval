@@ -12,6 +12,8 @@ import pandas as pd
 from tabulate import tabulate
 from more_itertools import partition
 from eval_timeline import DebugDict, TimelineTuple, TimelineTuples
+from math import ceil, sqrt
+from scipy.stats import norm
 
 parser = argparse.ArgumentParser(description="")
 
@@ -34,6 +36,8 @@ label_to_hierarchy = {
     "contains": 2,
     "contains-1": 2,
     "before": 3,
+    # testing, not confirmed yet
+    "after": 3,
     "none": 4,
 }
 
@@ -48,6 +52,25 @@ docker_output_columns = [
     "DCT",
     "tlink_inst",
 ]
+
+
+def sample_size(
+    population_size: int,
+    confidence_level: float = 0.95,
+    margin_of_error: float = 0.05,
+    estimated_proportion: float = 0.5,
+) -> int:
+    z_score = norm.ppf(1 - (1 - confidence_level) / 2)
+    repeated_numerator = pow(z_score, 2.0) * (
+        estimated_proportion * (1 - estimated_proportion)
+    )
+    margin_squared = pow(margin_of_error, 2.0)
+    unlimited_sample_size = repeated_numerator / margin_squared
+    finite_case_denominator = 1 + (
+        repeated_numerator / (population_size * margin_squared)
+    )
+    float_finite_sample_size = unlimited_sample_size / finite_case_denominator
+    return ceil(float_finite_sample_size)
 
 
 def normalize_str(string: str) -> str:
@@ -346,7 +369,7 @@ def write_summaries(
                 if count > 0:
                     writer.write(f"{patient_id}\t{count}\n")
 
-    with open(output_dir + "/metrics.txt", mode="wt") as outfile:
+    with open(output_dir + "/error_metrics.txt", mode="wt") as outfile:
         outfile.write(
             f"Total False Positives: {fp_total}\tTotal False Negatives: {fn_total}\n\n\n"
         )
