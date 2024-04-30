@@ -40,7 +40,6 @@ label_to_hierarchy = {
     "contains": 2,
     "contains-1": 2,
     "before": 3,
-    # testing, not confirmed yet
     "after": 3,
     "none": 4,
 }
@@ -247,16 +246,19 @@ def preimage_and_cause(
 
     def row_timex_compatible(pandas_row: pd.Series) -> bool:
         row_timex = cast(str, pandas_row.normed_timex)
+        print(f"in row {row_timex} against {normed_timex}")
         return compatible_time(row_timex, normed_timex, eval_mode)
 
     timex_chemo_matches = chemo_matches.loc[
         chemo_matches.apply(row_timex_compatible, axis=1)
     ]
-
+    print(set(chemo_matches["patient_id"]))
+    print(chemo_matches[docker_output_columns])
     if len(timex_chemo_matches) == 0:
         return [], ErrorCause.TIMEX
 
     if error_type == ErrorType.FALSE_NEGATIVE:
+        print(timex_chemo_matches)
         return (
             timex_chemo_matches[docker_output_columns].values.tolist(),
             ErrorCause.TLINK,
@@ -371,7 +373,7 @@ def write_summaries(
 
     def write_patient_count_dict(patient_count_dict, writer, top_k):
         for error_type, patient_counts in patient_count_dict.items():
-            writer.write(f"\n\n\nTop {top_k} Patients for {error_type}\n")
+            writer.write(f"\n\n\nTop {top_k} Patients for {error_type} errors\n")
             for patient_id, count in patient_counts.most_common(top_k):
                 if count > 0:
                     writer.write(f"{patient_id}\t{count}\n")
@@ -380,7 +382,7 @@ def write_summaries(
         outfile.write(
             f"{fp_total} Sampled False Positives Out of {original_fps} \t{fn_total} Sampled False Negatives Out of {original_fns}\n\n\n"
         )
-        outfile.write("ErrorCause\tTop 10\n")
+        outfile.write("ErrorCause Ranked\n")
         for error_cause, count in total_causes.most_common():
             outfile.write(f"{error_cause}\t{count}\n")
         write_patient_count_dict(cause_to_patient_count, outfile, 10)
@@ -460,13 +462,13 @@ def write_instances_and_summaries(
         dict_to_pairs(patient_to_false_positives), k=fp_sample_size
     )
     _sampled_fns = random.sample(
-        dict_to_pairs(patient_to_false_positives), k=fn_sample_size
+        dict_to_pairs(patient_to_false_negatives), k=fn_sample_size
     )
     patient_to_sampled_fp = pairs_to_dict(_sampled_fps)
     patient_to_sampled_fn = pairs_to_dict(_sampled_fns)
-    for patient_id in patient_to_sampled_fp:
-        sampled_fps = patient_to_sampled_fp[patient_id]
-        sampled_fns = patient_to_sampled_fn[patient_id]
+    for patient_id in {*patient_to_sampled_fp.keys(), *patient_to_sampled_fn.keys()}:
+        sampled_fps = patient_to_sampled_fp.get(patient_id, [])
+        sampled_fns = patient_to_sampled_fn.get(patient_id, [])
         write_patient_error_reports(patient_id, sampled_fps, sampled_fns, output_dir)
         patient_error_dict[patient_id] = {
             ErrorType.FALSE_NEGATIVE: get_error_cause_count(sampled_fns),
