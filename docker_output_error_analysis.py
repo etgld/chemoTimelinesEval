@@ -10,6 +10,7 @@ from functools import reduce
 from itertools import groupby
 from math import ceil
 from operator import itemgetter
+from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple, Union, cast
 
 import dateutil.parser
@@ -200,7 +201,16 @@ class ErrorDebug:
     @staticmethod
     def get_row(full_instance: instance) -> List[str]:
         (chemo, tlink, timex, note, DCT, text_instance) = full_instance
-        pandas_row = ["", "", chemo, timex, tlink, text_instance, note, DCT]
+        pandas_row = [
+            "",
+            "",
+            chemo,
+            timex,
+            tlink,
+            text_instance.replace("\n", " "),
+            note,
+            DCT,
+        ]
         pandas_row += [""] * (len(pandas_columns) - len(pandas_row))
         return pandas_row
 
@@ -499,11 +509,14 @@ def write_to_excel(
     for patient_id, errors in patient_to_errors_of_type.items():
         pt_error_type_frames = (error.to_pandas() for error in errors)
         full_dataframe = pd.concat(pt_error_type_frames, ignore_index=False)
-        fn = f"{patient_id}_{error_type}.xlsx"
-        final_path = os.path.join(output_dir, fn)
-        full_dataframe.to_excel(
-            final_path
+        fn = f"{error_type}.xlsx"
+        Path(os.path.join("./", output_dir, patient_id)).mkdir(
+            parents=True, exist_ok=True
         )
+        final_path = os.path.join(output_dir, patient_id, fn)
+        full_dataframe.reset_index(drop=True)
+        full_dataframe.to_excel(final_path)
+
 
 def write_instances_and_summaries(
     docker_tsv: str,
@@ -559,6 +572,16 @@ def write_instances_and_summaries(
     )
     patient_to_sampled_fp = pairs_to_dict(_sampled_fps)
     patient_to_sampled_fn = pairs_to_dict(_sampled_fns)
+    write_to_excel(
+        patient_to_sampled_fn,
+        error_type="False_Negatives",
+        output_dir="Error_Analysis_Spreadsheets",
+    )
+    write_to_excel(
+        patient_to_sampled_fp,
+        error_type="False_Positives",
+        output_dir="Error_Analysis_Spreadsheets",
+    )
     for patient_id in {*patient_to_sampled_fp.keys(), *patient_to_sampled_fn.keys()}:
         sampled_fps = patient_to_sampled_fp.get(patient_id, [])
         sampled_fns = patient_to_sampled_fn.get(patient_id, [])
