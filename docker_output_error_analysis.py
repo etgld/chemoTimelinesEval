@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import random
 import textwrap
 from collections import Counter
@@ -13,12 +14,12 @@ from typing import Dict, Iterable, List, Sequence, Tuple, Union, cast
 
 import dateutil.parser
 import pandas as pd
-from more_itertools import partition
+from more_itertools import flatten, partition
 from scipy.stats import norm
 from tabulate import tabulate
 
+from docker_output_to_timeline import clean_timex, keep_normalized_timex
 from eval_timeline import DebugDict, TimelineTuple, TimelineTuples
-from docker_output_to_timeline import keep_normalized_timex, clean_timex
 
 parser = argparse.ArgumentParser(description="")
 
@@ -47,6 +48,30 @@ label_to_hierarchy = {
 
 source_header = ["chemo", "tlink", "normed timex", "evaluation mode"]
 pred_header = ["chemo", "tlink", "normed timex", "note", "DCT", "instance"]
+pandas_columns = [
+    "ERROR TYPE",
+    "ERROR CAUSE",
+    "CHEMO",
+    "NORMED TIMEX",
+    "TLINK",
+    "TEXT",
+    "NOTE",
+    "DCT",
+    "CHEMO ERROR PRESENT",
+    "CHEMO ERROR COMMENTS",
+    "TLINK ERROR PRESENT",
+    "TLINK ERROR COMMENTS",
+    "TIMEX DETECTION ERROR PRESENT",
+    "TIMEX DETECTION ERROR COMMENTS",
+    "TIMEX NORMALIZATION ERROR PRESENT",
+    "TIMEX NORMALIZATION ERROR COMMENTS",
+    "SUMMARIZATION ERROR PRESENT",
+    "SUMMARIZATION ERROR COMMENTS",
+    "ANALYSIS ERROR PRESENT",
+    "ANALYSIS ERROR COMMENTS",
+    "ANNOTATION ERROR PRESENT",
+    "ANNOTATION ERROR COMMENTS",
+]
 eval_modes = {"strict", "day", "month", "year"}
 docker_output_columns = [
     "chemo_text",
@@ -171,6 +196,37 @@ class ErrorDebug:
 
     def get_error_cause(self) -> ErrorCause:
         return self.error_cause
+
+    @staticmethod
+    def get_row(full_instance: instance) -> List[str]:
+        (chemo, tlink, timex, note, DCT, text_instance) = full_instance
+        pandas_row = ["", "", chemo, timex, tlink, text_instance, note, DCT]
+        pandas_row += [""] * (len(pandas_columns) - len(pandas_row))
+        return pandas_row
+
+    def to_pandas(self) -> pd.DataFrame:
+        (
+            summarized_chemo,
+            summarized_tlink,
+            summarized_timex,
+            _,  # since we're always using month
+        ) = self.source_instance
+        first_row = [
+            self.error_type,
+            self.error_cause,
+            summarized_chemo,
+            summarized_timex,
+            summarized_tlink,
+            "SUMMARIZED INSTANCE",
+        ]
+        first_row += [""] * (len(pandas_columns) - len(first_row))
+        remaining_rows = (
+            ErrorDebug.get_row(instance)
+            for instance in flatten((self.tlink_matches, self.chemo_and_timex_matches))
+        )
+        return pd.DataFrame.from_records(
+            flatten(([first_row], remaining_rows)), columns=pandas_columns
+        )
 
 
 def raw_normalize(time: str) -> str:
@@ -434,6 +490,20 @@ def write_patient_error_reports(
         fn_out.write(fp_str)
         fn_out.write(fn_str)
 
+
+def write_to_excel(
+    patient_to_errors_of_type: Dict[str, List[ErrorDebug]],
+    error_type: str,
+    output_dir: str,
+) -> None:
+    for patient_id, errors in patient_to_errors_of_type.items():
+        pt_error_type_frames = (error.to_pandas() for error in errors)
+        full_dataframe = pd.concat(pt_error_type_frames, ignore_index=False)
+        fn = f"{patient_id}_{error_type}.xlsx"
+        final_path = os.path.join(output_dir, fn)
+        full_dataframe.to_excel(
+            final_path
+        )
 
 def write_instances_and_summaries(
     docker_tsv: str,
